@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
+import TorrenLogo from '../components/TorrenLogo';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -47,24 +48,18 @@ export default function Login() {
         borderRadius: 20,
         padding: '48px 40px',
       }}>
-        <div style={{ textAlign: 'center', marginBottom: 40 }}>
-          <Link to="/" style={{
-            fontFamily: "'Space Grotesk', sans-serif",
-            fontWeight: 700,
-            fontSize: 16,
-            letterSpacing: '0.2em',
-            textTransform: 'uppercase',
-            color: '#E6DACA',
-            textDecoration: 'none',
-          }}>
-            TORREN
+        <div style={{ textAlign: 'center', marginBottom: 36 }}>
+          <Link to="/" style={{ textDecoration: 'none', display: 'inline-block' }}>
+            <TorrenLogo variant="full" theme="crema" height={22} subtitle={true} />
           </Link>
           <p style={{
             fontSize: 13,
             color: '#C4B49F',
-            marginTop: 8,
+            marginTop: 16,
+            fontFamily: "'Space Grotesk', sans-serif",
+            letterSpacing: '0.04em',
           }}>
-            Inicia sesión en tu cuenta
+            Portal de Clientes y Soporte
           </p>
         </div>
 

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import Stripe from 'stripe';
 import { createAdminClient } from '../config/supabase.js';
+import { fulfillCheckoutSession } from '../services/subscriptionProvisioning.js';
 
 const router = Router();
 
@@ -137,132 +138,9 @@ router.post('/webhook', async (req, res) => {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object;
-        const { planId, planSlug, email, companyName, contactName } = session.metadata;
-
-        // Create or find client
-        let clientId;
-
-        // Check if client exists by email in users
-        const { data: existingUser } = await db
-          .from('users')
-          .select('client_id, clients(*)')
-          .eq('email', email)
-          .limit(1)
-          .single();
-
-        if (existingUser?.client_id) {
-          clientId = existingUser.client_id;
-
-          // Save stripe_customer_id to client
-          await db
-            .from('clients')
-            .update({ stripe_customer_id: session.customer })
-            .eq('id', clientId);
-        } else {
-          // Create new prospect client
-          const { data: lastClients } = await db
-            .from('clients')
-            .select('id')
-            .order('id', { ascending: false })
-            .limit(1);
-
-          const nextNum = lastClients?.length > 0 ? lastClients[0].id + 1 : 1;
-          const clientNumber = `TRN-${String(nextNum).padStart(4, '0')}`;
-
-          const { data: newClient, error: clientError } = await db
-            .from('clients')
-            .insert({
-              client_number: clientNumber,
-              company_name: companyName || email,
-              contact_name: contactName || email,
-              status: 'prospecto',
-              stripe_customer_id: session.customer,
-            })
-            .select()
-            .single();
-
-          if (clientError) throw clientError;
-          clientId = newClient.id;
-        }
-
-        // Get subscription from Stripe
-        const subscription = await stripe.subscriptions.retrieve(session.subscription);
-
-        // Create or update subscription in DB
-        const { data: existingSub } = await db
-          .from('subscriptions')
-          .select('id')
-          .eq('client_id', clientId)
-          .limit(1)
-          .single();
-
-        if (existingSub) {
-          await db
-            .from('subscriptions')
-            .update({
-              plan_id: parseInt(planId),
-              status: 'activa',
-              stripe_subscription_id: subscription.id,
-              start_date: new Date().toISOString(),
-              current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-              current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-            })
-            .eq('id', existingSub.id);
-        } else {
-          await db
-            .from('subscriptions')
-            .insert({
-              client_id: clientId,
-              plan_id: parseInt(planId),
-              status: 'activa',
-              stripe_subscription_id: subscription.id,
-              start_date: new Date().toISOString(),
-              current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-              current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-            });
-        }
-
-        // Activate client if prospecto
-        await db
-          .from('clients')
-          .update({ status: 'activo' })
-          .eq('id', clientId)
-          .eq('status', 'prospecto');
-
-        // Create hour allocation for current period
-        const plan = await db
-          .from('plans')
-          .select('dev_hours_monthly')
-          .eq('id', parseInt(planId))
-          .single();
-
-        if (plan.data) {
-          const now = new Date();
-          const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-          // Check if allocation already exists
-          const { data: existingAllocation } = await db
-            .from('hour_ledger')
-            .select('id')
-            .eq('client_id', clientId)
-            .eq('type', 'allocation')
-            .eq('period', currentPeriod)
-            .limit(1);
-
-          if (!existingAllocation?.length) {
-            await db
-              .from('hour_ledger')
-              .insert({
-                client_id: clientId,
-                type: 'allocation',
-                hours: plan.data.dev_hours_monthly,
-                description: `Asignacion mensual plan ${planSlug} - ${currentPeriod}`,
-                period: currentPeriod,
-              });
-          }
-        }
-
-        console.log(`Checkout completed for ${email}, plan: ${planSlug}`);
+        console.log(`Processing checkout.session.completed for session ${session.id}...`);
+        const result = await fulfillCheckoutSession(session);
+        console.log(`Checkout session ${session.id} fulfilled successfully:`, result);
         break;
       }
 
@@ -357,21 +235,14 @@ router.post('/portal-session', async (req, res) => {
   }
 });
 
-// GET /api/stripe/verify-session/:sessionId - Verify a checkout session
+// GET /api/stripe/verify-session/:sessionId - Verify and fulfill a checkout session
 router.get('/verify-session/:sessionId', async (req, res) => {
   try {
-    const stripe = getStripe();
-    const session = await stripe.checkout.sessions.retrieve(req.params.sessionId);
-
-    res.json({
-      status: session.payment_status,
-      customer: session.customer,
-      subscription: session.subscription,
-      metadata: session.metadata,
-    });
+    const result = await fulfillCheckoutSession(req.params.sessionId);
+    res.json(result);
   } catch (err) {
     console.error('Error verifying session:', err);
-    res.status(500).json({ error: 'Error al verificar sesion' });
+    res.status(500).json({ error: err.message || 'Error al verificar sesión' });
   }
 });
 

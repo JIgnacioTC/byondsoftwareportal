@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import TorrenLogo from './TorrenLogo';
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -78,7 +79,9 @@ export default function Navbar() {
   return (
     <nav style={navStyle}>
       <div style={inner}>
-        <Link to="/" style={logo}>TORREN</Link>
+        <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center' }}>
+          <TorrenLogo variant="horizontal" theme="crema" height={scrolled ? 24 : 28} />
+        </Link>
 
         {/* Desktop links */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 32 }} className="nav-desktop">

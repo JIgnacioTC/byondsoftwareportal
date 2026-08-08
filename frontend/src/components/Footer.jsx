@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import TorrenLogo from './TorrenLogo';
 
 export default function Footer() {
   const col = {
@@ -36,16 +37,8 @@ export default function Footer() {
         }}>
           {/* Logo + description */}
           <div>
-            <div style={{
-              fontFamily: "'Space Grotesk', sans-serif",
-              fontWeight: 700,
-              fontSize: 16,
-              letterSpacing: '0.2em',
-              textTransform: 'uppercase',
-              color: '#E6DACA',
-              marginBottom: 16,
-            }}>
-              TORREN
+            <div style={{ marginBottom: 16 }}>
+              <TorrenLogo variant="horizontal" theme="crema" height={26} />
             </div>
             <p style={{ fontSize: 14, color: '#C4B49F', lineHeight: 1.7, maxWidth: 280 }}>
               Soluciones de software a medida para empresas que buscan innovación, confianza y resultados.

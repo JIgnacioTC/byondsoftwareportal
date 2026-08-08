@@ -150,6 +150,15 @@ export function IconTool({ size = 20, color = 'currentColor' }) {
   );
 }
 
+export function IconClock({ size = 20, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
 const iconMap = {
   code: IconCode,
   support: IconSupport,

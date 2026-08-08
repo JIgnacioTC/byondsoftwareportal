@@ -1,10 +1,12 @@
 import { Link } from 'react-router-dom';
+import TorrenLogo from '../../components/TorrenLogo';
 
 export default function StripeCancel() {
   return (
     <div style={{
       minHeight: '100vh',
       background: '#0F1E2D',
+      backgroundImage: 'radial-gradient(ellipse at 50% 15%, rgba(26,46,68,0.7) 0%, #0F1E2D 80%)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -20,6 +22,11 @@ export default function StripeCancel() {
         width: '100%',
         textAlign: 'center',
       }}>
+        <div style={{ marginBottom: 24 }}>
+          <Link to="/" style={{ textDecoration: 'none', display: 'inline-block' }}>
+            <TorrenLogo variant="horizontal" theme="crema" height={24} />
+          </Link>
+        </div>
         <div style={{
           width: 64,
           height: 64,

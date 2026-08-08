@@ -2,6 +2,7 @@ import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
 import { IconChart, IconBuilding, IconUsers, IconBox, IconTicket, IconTrending, IconLayout, IconTool } from '../../components/Icons';
+import TorrenLogo from '../../components/TorrenLogo';
 
 const navItems = [
   { to: '/admin', label: 'Dashboard', Icon: IconChart },
@@ -27,7 +28,7 @@ export default function AdminLayout() {
     <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'system-ui, sans-serif' }}>
       <aside style={{
         width: 250,
-        background: '#1e3a5f',
+        background: '#0F1E2D',
         color: '#fff',
         display: 'flex',
         flexDirection: 'column',
@@ -36,10 +37,13 @@ export default function AdminLayout() {
         left: 0,
         bottom: 0,
         zIndex: 100,
+        borderRight: '1px solid rgba(196,180,159,0.15)',
       }}>
-        <div style={{ padding: '24px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-          <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>TORREN</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 12, opacity: 0.7 }}>Administracion</p>
+        <div style={{ padding: '24px 20px', borderBottom: '1px solid rgba(196,180,159,0.12)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <TorrenLogo variant="horizontal" theme="crema" height={22} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#C4B49F', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+            Administración
+          </span>
         </div>
 
         <nav style={{ flex: 1, padding: '16px 0' }}>

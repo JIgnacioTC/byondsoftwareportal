@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 120"><g fill="none" stroke="#0F1E2D" stroke-width="8" stroke-linecap="square" stroke-linejoin="miter">
+<path d="M30 35H90M60 35V85"/><rect x="125" y="35" width="60" height="50" rx="8"/>
+<path d="M225 85V35H275L285 45L275 58H225M255 58L286 85"/><path d="M325 85V35H375L385 45L375 58H325M355 58L386 85"/>
+<path d="M425 35H480M425 60H475M425 85H480"/><path d="M520 85V35L575 85V35"/></g></svg>

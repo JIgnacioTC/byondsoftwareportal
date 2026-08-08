@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
+import TorrenLogo from '../../components/TorrenLogo';
 
 const navItems = [
   { to: '/portal', label: 'Dashboard', icon: '📊', end: true },
@@ -171,8 +172,11 @@ export default function PortalLayout() {
         ...styles.sidebar,
         ...(sidebarOpen ? {} : {}),
       }}>
-        <div style={styles.sidebarHeader}>
-          <h1 style={styles.logo}>Portal de Cliente</h1>
+        <div style={{ ...styles.sidebarHeader, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <TorrenLogo variant="horizontal" theme="abisal" height={22} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            Portal de Cliente
+          </span>
         </div>
 
         <nav style={styles.nav}>

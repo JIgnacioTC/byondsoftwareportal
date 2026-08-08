@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420"><rect width="800" height="420" fill="#E6DACA"/>
+<g transform="translate(330 45) scale(1.4)" fill="#0F1E2D"><path d="M16 16H76V27H58L42 43L58 59L76 77V94L34 52V88L23 98V27H16Z"/></g>
+<g transform="translate(100 235)" fill="none" stroke="#0F1E2D" stroke-width="8" stroke-linecap="square" stroke-linejoin="miter">
+<path d="M30 35H90M60 35V85"/><rect x="125" y="35" width="60" height="50" rx="8"/><path d="M225 85V35H275L285 45L275 58H225M255 58L286 85"/>
+<path d="M325 85V35H375L385 45L375 58H325M355 58L386 85"/><path d="M425 35H480M425 60H475M425 85H480"/><path d="M520 85V35L575 85V35"/></g>
+<text x="400" y="375" text-anchor="middle" fill="#C4B49F" font-family="Arial,sans-serif" font-size="18" letter-spacing="9">DESARROLLO DE SOFTWARE</text></svg>
