@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
+import SlidingBackground from './components/SlidingBackground';
 
 // Landing & Auth
 import Landing from './pages/Landing';
@@ -71,6 +72,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <SlidingBackground />
         <Routes>
           {/* Public & Auth */}
           <Route path="/" element={<Landing />} />

@@ -32,7 +32,7 @@ export default function Login() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#0F1E2D',
+      background: 'transparent',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',

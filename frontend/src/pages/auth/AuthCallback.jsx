@@ -141,8 +141,7 @@ export default function AuthCallback() {
     <div
       style={{
         minHeight: '100vh',
-        background: '#0F1E2D',
-        backgroundImage: 'radial-gradient(ellipse at 50% 20%, rgba(26,46,68,0.7) 0%, #0F1E2D 80%)',
+        background: 'transparent',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
