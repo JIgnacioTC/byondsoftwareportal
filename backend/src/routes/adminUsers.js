@@ -180,6 +180,41 @@ router.post('/:id/reset-password', async (req, res) => {
   }
 });
 
+// POST /api/admin/users/:id/send-invite (generate setup / recovery link)
+router.post('/:id/send-invite', async (req, res) => {
+  try {
+    const db = createAdminClient();
+    const { data: user, error: userError } = await db
+      .from('users')
+      .select('email')
+      .eq('id', req.params.id)
+      .limit(1)
+      .single();
+
+    if (userError || !user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const frontendUrl = process.env.FRONTEND_URL || 'https://www.torren.dev';
+    const { data: linkData, error: linkErr } = await db.auth.admin.generateLink({
+      type: 'recovery',
+      email: user.email,
+      options: {
+        redirectTo: `${frontendUrl}/auth/reset-password`,
+      },
+    });
+
+    if (linkErr) throw linkErr;
+
+    res.json({
+      message: 'Enlace generado exitosamente',
+      actionLink: linkData?.properties?.action_link,
+      email: user.email,
+    });
+  } catch (err) {
+    console.error('Error generating invite link:', err);
+    res.status(500).json({ error: err.message || 'Error al generar enlace' });
+  }
+});
+
 // DELETE /api/admin/users/:id (soft delete - deactivate)
 router.delete('/:id', async (req, res) => {
   try {

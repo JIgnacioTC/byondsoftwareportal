@@ -244,7 +244,7 @@ export async function fulfillCheckoutSession(sessionIdOrSession) {
         type: 'recovery',
         email: cleanEmail,
         options: {
-          redirectTo: `${frontendUrl}/login`,
+          redirectTo: `${frontendUrl}/auth/reset-password`,
         },
       });
       if (!linkErr && linkData?.properties?.action_link) {

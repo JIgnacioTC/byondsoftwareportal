@@ -87,6 +87,35 @@ export function AuthProvider({ children }) {
     setSession(null);
   };
 
+  const resetPasswordForEmail = async (email, redirectTo) => {
+    const redirectUrl = redirectTo || `${window.location.origin}/auth/reset-password`;
+    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl,
+    });
+    if (error) throw error;
+    return data;
+  };
+
+  const updatePassword = async (newPassword) => {
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+    if (error) throw error;
+    if (session?.access_token) {
+      await loadUserProfile(session.access_token);
+    }
+    return data;
+  };
+
+  const refreshProfile = async () => {
+    const { data: { session: curSession } } = await supabase.auth.getSession();
+    if (curSession?.access_token) {
+      setSession(curSession);
+      return await loadUserProfile(curSession.access_token);
+    }
+    return null;
+  };
+
   const getAccessToken = () => {
     return session?.access_token;
   };
@@ -99,6 +128,10 @@ export function AuthProvider({ children }) {
       loading,
       login,
       logout,
+      resetPasswordForEmail,
+      updatePassword,
+      refreshProfile,
+      loadUserProfile,
       session,
       getAccessToken,
     }}>

@@ -4,6 +4,10 @@ import { AuthProvider, useAuth } from './lib/AuthContext';
 // Landing & Auth
 import Landing from './pages/Landing';
 import Login from './pages/Login';
+import AuthCallback from './pages/auth/AuthCallback';
+import ResetPassword from './pages/auth/ResetPassword';
+import ForgotPassword from './pages/auth/ForgotPassword';
+import ConfirmEmail from './pages/auth/ConfirmEmail';
 
 // Static pages
 import SobreNosotros from './pages/SobreNosotros';
@@ -68,9 +72,13 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Public */}
+          {/* Public & Auth */}
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/auth/reset-password" element={<ResetPassword />} />
+          <Route path="/auth/forgot-password" element={<ForgotPassword />} />
+          <Route path="/auth/confirm" element={<ConfirmEmail />} />
           <Route path="/sobre-nosotros" element={<SobreNosotros />} />
           <Route path="/servicios" element={<Servicios />} />
           <Route path="/contacto" element={<Contacto />} />

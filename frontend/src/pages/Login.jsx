@@ -74,7 +74,22 @@ export default function Login() {
             style={inputStyle}
           />
 
-          <label style={labelStyle}>Contraseña</label>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <label style={{ ...labelStyle, marginBottom: 0 }}>Contraseña</label>
+            <Link
+              to="/auth/forgot-password"
+              style={{
+                fontSize: 12,
+                color: '#C4B49F',
+                textDecoration: 'none',
+                transition: 'color 0.2s ease',
+              }}
+              onMouseEnter={(e) => (e.target.style.color = '#E6DACA')}
+              onMouseLeave={(e) => (e.target.style.color = '#C4B49F')}
+            >
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </div>
           <input
             type="password"
             required
