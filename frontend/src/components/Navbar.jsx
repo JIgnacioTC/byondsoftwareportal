@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../lib/AuthContext';
 import TorrenLogo from './TorrenLogo';
 
 export default function Navbar() {
+  const { user } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
@@ -103,7 +105,7 @@ export default function Navbar() {
             </Link>
           ))}
           <Link
-            to="/login"
+            to={user ? (user.role === 'admin' || user.role === 'agent' ? '/admin' : '/portal') : '/login'}
             style={{
               fontFamily: "'Space Grotesk', sans-serif",
               fontSize: 12,
@@ -126,7 +128,7 @@ export default function Navbar() {
               e.target.style.boxShadow = 'none';
             }}
           >
-            Portal
+            {user ? 'Mi Portal' : 'Acceso'}
           </Link>
         </div>
 
@@ -143,7 +145,9 @@ export default function Navbar() {
             gap: 5,
           }}
           className="nav-hamburger"
-          aria-label="Menú"
+          aria-label={menuOpen ? "Cerrar menú de navegación" : "Abrir menú de navegación"}
+          aria-expanded={menuOpen}
+          aria-controls="mobile-menu"
         >
           <span style={{ width: 24, height: 2, background: '#E6DACA', borderRadius: 1, transition: 'all 0.3s', transform: menuOpen ? 'rotate(45deg) translate(5px,5px)' : 'none' }} />
           <span style={{ width: 24, height: 2, background: '#E6DACA', borderRadius: 1, opacity: menuOpen ? 0 : 1, transition: 'all 0.3s' }} />
@@ -153,7 +157,7 @@ export default function Navbar() {
 
       {/* Mobile menu */}
       {menuOpen && (
-        <div style={{
+        <div id="mobile-menu" style={{
           background: 'rgba(15,30,45,0.95)',
           backdropFilter: 'blur(24px)',
           padding: '24px',
@@ -176,7 +180,7 @@ export default function Navbar() {
             </Link>
           ))}
           <Link
-            to="/login"
+            to={user ? (user.role === 'admin' || user.role === 'agent' ? '/admin' : '/portal') : '/login'}
             style={{
               ...linkStyle,
               fontSize: 14,
@@ -188,7 +192,7 @@ export default function Navbar() {
               marginTop: 8,
             }}
           >
-            Portal
+            {user ? 'Mi Portal' : 'Acceso'}
           </Link>
         </div>
       )}

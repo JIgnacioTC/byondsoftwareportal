@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../lib/AuthContext';
 import { IconArrowRight, IconCheck, ServiceIcon } from '../components/Icons';
 
 function formatMXN(amount) {
@@ -202,17 +203,22 @@ function renderServiceIcon(iconName) {
 import Navbar from '../components/Navbar';
 
 export default function Landing() {
+  const { user, client } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
   const [plans, setPlans] = useState([]);
   const [services, setServices] = useState([]);
   const [stats, setStats] = useState(null);
   const [content, setContent] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
+  const [authRequiredModalOpen, setAuthRequiredModalOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [form, setForm] = useState({ company: '', contact: '', email: '' });
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
-  const [activePlanTab, setActivePlanTab] = useState('all'); // 'all', 'care', 'build', 'accelerated', 'project', 'custom'
+  const [activePlanTab, setActivePlanTab] = useState('all');
 
   const servicesRef = useRef(null);
   const processRef = useRef(null);
@@ -227,14 +233,38 @@ export default function Landing() {
   const ctaVisible = useInView(ctaRef);
 
   useEffect(() => {
-    fetch('/api/public/plans').then(r => r.json()).then(setPlans).catch(() => {});
+    fetch('/api/public/plans').then(r => r.json()).then(data => {
+      setPlans(data);
+      const planSlug = searchParams.get('plan');
+      if (planSlug && Array.isArray(data)) {
+        const found = data.find(p => p.slug === planSlug);
+        if (found) {
+          openModal(found);
+        }
+      }
+    }).catch(() => {});
     fetch('/api/public/services').then(r => r.json()).then(setServices).catch(() => {});
     fetch('/api/public/stats').then(r => r.json()).then(setStats).catch(() => {});
     fetch('/api/public/content').then(r => r.json()).then(setContent).catch(() => {});
-  }, []);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (user) {
+      setForm(prev => ({
+        ...prev,
+        email: user.email || prev.email,
+        contact: user.fullName || prev.contact,
+        company: client?.company_name || prev.company,
+      }));
+    }
+  }, [user, client]);
 
   function openModal(plan) {
     setSelectedPlan(plan);
+    if (!user) {
+      setAuthRequiredModalOpen(true);
+      return;
+    }
     setModalOpen(true);
     setSuccess(false);
     setError('');
@@ -242,7 +272,7 @@ export default function Landing() {
 
   function closeModal() {
     setModalOpen(false);
-    setForm({ company: '', contact: '', email: '' });
+    setAuthRequiredModalOpen(false);
     setSuccess(false);
     setError('');
   }
@@ -326,7 +356,9 @@ export default function Landing() {
 
   return (
     <div>
+      <a href="#main-content" className="skip-link">Saltar al contenido principal</a>
       <Navbar />
+      <main id="main-content">
       {/* ============ HERO ============ */}
       <section style={S.hero}>
         <div style={S.heroOverlay} />
@@ -562,7 +594,7 @@ export default function Landing() {
             <div className="section-divider" />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 40, flexWrap: 'wrap' }}>
+          <div role="tablist" aria-label="Categorías de planes" style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 40, flexWrap: 'wrap' }}>
             {[
               { id: 'all', label: 'Todos' },
               { id: 'care', label: 'Hosting & Care' },
@@ -580,6 +612,9 @@ export default function Landing() {
               return (
                 <button
                   key={tab.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls="planes-grid"
                   onClick={() => setActivePlanTab(tab.id)}
                   style={{
                     padding: '10px 22px',
@@ -617,7 +652,7 @@ export default function Landing() {
             })}
           </div>
 
-          <div style={{
+          <div id="planes-grid" role="tabpanel" style={{
             ...S.pricingGrid,
             opacity: pricingVisible ? 1 : 0,
             transform: pricingVisible ? 'translateY(0)' : 'translateY(30px)',
@@ -759,6 +794,7 @@ export default function Landing() {
           </div>
         </div>
       </section>
+      </main>
 
       {/* ============ MODAL ============ */}
       {modalOpen && (
@@ -774,16 +810,22 @@ export default function Landing() {
           justifyContent: 'center',
           padding: 24,
         }}>
-          <div onClick={(e) => e.stopPropagation()} style={{
-            background: 'rgba(26,46,68,0.9)',
-            backdropFilter: 'blur(32px)',
-            WebkitBackdropFilter: 'blur(32px)',
-            border: '1px solid rgba(196,180,159,0.15)',
-            borderRadius: 20,
-            padding: 48,
-            maxWidth: 480,
-            width: '100%',
-          }}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'rgba(26,46,68,0.9)',
+              backdropFilter: 'blur(32px)',
+              WebkitBackdropFilter: 'blur(32px)',
+              border: '1px solid rgba(196,180,159,0.15)',
+              borderRadius: 20,
+              padding: 48,
+              maxWidth: 480,
+              width: '100%',
+            }}
+          >
             {success ? (
               <div style={{ textAlign: 'center' }}>
                 <div style={{
@@ -799,7 +841,7 @@ export default function Landing() {
                 }}>
                   <IconCheck size={28} color="#E6DACA" />
                 </div>
-                <h3 style={{
+                <h3 id="modal-title" style={{
                   fontFamily: "'Space Grotesk', sans-serif",
                   fontSize: 20,
                   fontWeight: 700,
@@ -815,7 +857,7 @@ export default function Landing() {
               </div>
             ) : (
               <>
-                <h3 style={{
+                <h3 id="modal-title" style={{
                   fontFamily: "'Space Grotesk', sans-serif",
                   fontSize: 20,
                   fontWeight: 700,
@@ -829,24 +871,27 @@ export default function Landing() {
                   {selectedPlan?.billing_type !== 'quote' && ` — ${formatMXN(selectedPlan?.base_price)}${selectedPlan?.billing_type === 'monthly' ? '/mes' : ''}`}
                 </p>
                 <form onSubmit={handleSubmit}>
-                  <label style={labelStyle}>Empresa</label>
+                  <label htmlFor="company-name" style={labelStyle}>Empresa</label>
                   <input
+                    id="company-name"
                     required
                     value={form.company}
                     onChange={(e) => setForm({ ...form, company: e.target.value })}
                     style={inputStyle}
                     placeholder="Nombre de tu empresa"
                   />
-                  <label style={labelStyle}>Nombre de contacto</label>
+                  <label htmlFor="contact-name" style={labelStyle}>Nombre de contacto</label>
                   <input
+                    id="contact-name"
                     required
                     value={form.contact}
                     onChange={(e) => setForm({ ...form, contact: e.target.value })}
                     style={inputStyle}
                     placeholder="Tu nombre completo"
                   />
-                  <label style={labelStyle}>Correo electronico</label>
+                  <label htmlFor="contact-email" style={labelStyle}>Correo electronico</label>
                   <input
+                    id="contact-email"
                     required
                     type="email"
                     value={form.email}
@@ -854,7 +899,7 @@ export default function Landing() {
                     style={inputStyle}
                     placeholder="tu@empresa.com"
                   />
-                  {error && <p style={{ color: '#ef4444', fontSize: 13, marginBottom: 16 }}>{error}</p>}
+                  {error && <p role="alert" style={{ color: '#ef4444', fontSize: 13, marginBottom: 16 }}>{error}</p>}
                   {selectedPlan?.billing_type !== 'quote' && (
                     <p style={{ fontSize: 12, color: '#C4B49F', marginBottom: 16, lineHeight: 1.5 }}>
                       Seras redirigido a Stripe para completar el pago de forma segura.
@@ -869,6 +914,103 @@ export default function Landing() {
                 </form>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ============ AUTH REQUIRED MODAL ============ */}
+      {authRequiredModalOpen && (
+        <div onClick={closeModal} style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(15,30,45,0.8)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          zIndex: 2000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+        }}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="auth-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'rgba(26,46,68,0.95)',
+              backdropFilter: 'blur(32px)',
+              WebkitBackdropFilter: 'blur(32px)',
+              border: '1px solid rgba(196,180,159,0.15)',
+              borderRadius: 20,
+              padding: 40,
+              maxWidth: 440,
+              width: '100%',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: '50%',
+              background: 'rgba(230,218,202,0.1)',
+              border: '1px solid rgba(230,218,202,0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 20px',
+              fontSize: 24,
+            }}>
+              🔒
+            </div>
+
+            <h3 id="auth-modal-title" style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: 20,
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: '#E6DACA',
+              marginBottom: 12,
+            }}>
+              Inicio de sesión requerido
+            </h3>
+
+            <p style={{ color: '#C4B49F', fontSize: 14, marginBottom: 28, lineHeight: 1.6 }}>
+              Para contratar el plan <strong style={{ color: '#E6DACA' }}>{selectedPlan?.name}</strong> debes tener una cuenta e iniciar sesión en nuestro portal.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <button
+                onClick={() => navigate(`/login?mode=signup&plan=${selectedPlan?.slug}`)}
+                className="btn-cta"
+                style={{ width: '100%' }}
+              >
+                Crear Cuenta Nueva
+              </button>
+
+              <button
+                onClick={() => navigate(`/login?mode=login&plan=${selectedPlan?.slug}`)}
+                className="btn-secondary"
+                style={{ width: '100%' }}
+              >
+                Ya tengo cuenta (Iniciar Sesión)
+              </button>
+
+              <button
+                onClick={closeModal}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#C4B49F',
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  marginTop: 8,
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}

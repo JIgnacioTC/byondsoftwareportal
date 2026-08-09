@@ -79,6 +79,22 @@ export function AuthProvider({ children }) {
     };
   };
 
+  const register = async (email, password, fullName, companyName) => {
+    const res = await api.register(email, password, fullName, companyName);
+    if (res.session?.access_token) {
+      await supabase.auth.setSession(res.session);
+      const profile = await loadUserProfile(res.session.access_token);
+      return {
+        user: profile?.user || res.user,
+        client: profile?.client || null,
+        session: res.session,
+      };
+    } else {
+      // Fallback: try logging in if session wasn't auto-returned
+      return await login(email, password);
+    }
+  };
+
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -127,6 +143,7 @@ export function AuthProvider({ children }) {
       subscription,
       loading,
       login,
+      register,
       logout,
       resetPasswordForEmail,
       updatePassword,

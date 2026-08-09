@@ -28,6 +28,7 @@ async function request(url, options = {}) {
 export const api = {
   // Auth
   login: (email, password) => request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  register: (email, password, fullName, companyName) => request('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, fullName, companyName }) }),
   logout: () => request('/auth/logout', { method: 'POST' }),
   me: (accessToken) => {
     const config = {

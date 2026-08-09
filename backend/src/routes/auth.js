@@ -83,6 +83,88 @@ router.post('/login', loginLimiter, async (req, res) => {
   }
 });
 
+// POST /api/auth/register
+router.post('/register', async (req, res) => {
+  try {
+    const { email, password, fullName, companyName } = req.body;
+
+    if (!email || !password || !fullName) {
+      return res.status(400).json({ error: 'Nombre, email y contraseña son requeridos' });
+    }
+
+    // Sign up with Supabase Auth
+    const { data: authData, error: authError } = await supabaseAdmin.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          company_name: companyName || '',
+        },
+      },
+    });
+
+    if (authError) {
+      return res.status(400).json({ error: authError.message });
+    }
+
+    if (!authData.user) {
+      return res.status(400).json({ error: 'No se pudo crear el usuario' });
+    }
+
+    const db = createAdminClient();
+
+    // Check if client exists or create one
+    let clientId = null;
+    if (companyName) {
+      const { data: newClient } = await db
+        .from('clients')
+        .insert({
+          company_name: companyName,
+          contact_name: fullName,
+          contact_email: email,
+          status: 'lead',
+        })
+        .select()
+        .single();
+      if (newClient) clientId = newClient.id;
+    }
+
+    // Create user in public.users
+    const { data: newUser, error: newUserError } = await db
+      .from('users')
+      .insert({
+        supabase_uid: authData.user.id,
+        email: email.toLowerCase(),
+        full_name: fullName,
+        role: 'client_user',
+        client_id: clientId,
+        active: true,
+      })
+      .select()
+      .single();
+
+    if (newUserError) {
+      console.error('Error creating app user record:', newUserError);
+    }
+
+    res.json({
+      message: 'Registro exitoso',
+      user: newUser || {
+        supabaseUid: authData.user.id,
+        email,
+        fullName,
+        role: 'client_user',
+        clientId,
+      },
+      session: authData.session,
+    });
+  } catch (err) {
+    console.error('Register error:', err);
+    res.status(500).json({ error: 'Error del servidor durante el registro' });
+  }
+});
+
 // POST /api/auth/logout
 router.post('/logout', async (req, res) => {
   try {
