@@ -212,7 +212,7 @@ export default function Landing() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
-  const [activePlanTab, setActivePlanTab] = useState('care'); // 'care', 'build', 'accelerated', 'project', 'custom'
+  const [activePlanTab, setActivePlanTab] = useState('all'); // 'all', 'care', 'build', 'accelerated', 'project', 'custom'
 
   const servicesRef = useRef(null);
   const processRef = useRef(null);
@@ -562,33 +562,59 @@ export default function Landing() {
             <div className="section-divider" />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 40, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 40, flexWrap: 'wrap' }}>
             {[
+              { id: 'all', label: 'Todos' },
               { id: 'care', label: 'Hosting & Care' },
               { id: 'build', label: 'TORREN Build' },
               { id: 'accelerated', label: 'TORREN Accelerated' },
               { id: 'project', label: 'Proyectos & MVP' },
               { id: 'custom', label: 'Empresarial' },
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActivePlanTab(tab.id)}
-                style={{
-                  padding: '10px 24px',
-                  background: activePlanTab === tab.id ? '#E6DACA' : 'rgba(26,46,68,0.5)',
-                  color: activePlanTab === tab.id ? '#0F1E2D' : '#E6DACA',
-                  border: '1px solid rgba(196,180,159,0.2)',
-                  borderRadius: 30,
-                  cursor: 'pointer',
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  fontWeight: 600,
-                  transition: 'all 0.3s ease',
-                  fontSize: 14,
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
+            ].map(tab => {
+              const count = tab.id === 'all'
+                ? plans.length
+                : plans.filter(p => p.plan_family === tab.id).length;
+              if (tab.id !== 'all' && count === 0) return null;
+
+              const isActive = activePlanTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActivePlanTab(tab.id)}
+                  style={{
+                    padding: '10px 22px',
+                    background: isActive ? '#E6DACA' : 'rgba(26,46,68,0.5)',
+                    color: isActive ? '#0F1E2D' : '#E6DACA',
+                    border: isActive ? '1px solid #E6DACA' : '1px solid rgba(196,180,159,0.2)',
+                    borderRadius: 30,
+                    cursor: 'pointer',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontWeight: 600,
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    fontSize: 13,
+                    letterSpacing: '0.04em',
+                    boxShadow: isActive ? '0 4px 20px rgba(230,218,202,0.25)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <span>{tab.label}</span>
+                  {count > 0 && (
+                    <span style={{
+                      fontSize: 11,
+                      padding: '2px 7px',
+                      borderRadius: 10,
+                      background: isActive ? 'rgba(15,30,45,0.15)' : 'rgba(230,218,202,0.15)',
+                      color: isActive ? '#0F1E2D' : '#C4B49F',
+                      fontWeight: 700,
+                    }}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           <div style={{
@@ -597,7 +623,7 @@ export default function Landing() {
             transform: pricingVisible ? 'translateY(0)' : 'translateY(30px)',
             transition: 'all 0.8s cubic-bezier(0.4,0,0.2,1)',
           }}>
-            {plans.filter(p => p.plan_family === activePlanTab).map((plan, i) => {
+            {plans.filter(p => activePlanTab === 'all' || p.plan_family === activePlanTab).map((plan, i) => {
               const isFeatured = plan.slug.includes('growth') || plan.slug.includes('standard');
               const isQuote = plan.billing_type === 'quote';
               const isMonthly = plan.billing_type === 'monthly';
