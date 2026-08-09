@@ -115,7 +115,7 @@ router.post('/create-checkout-session', async (req, res) => {
     res.json({ url: session.url });
   } catch (err) {
     console.error('Error creating checkout session:', err);
-    res.status(500).json({ error: 'Error al crear sesion de pago' });
+    res.status(500).json({ error: err.message || 'Error al crear sesion de pago', details: err.stack });
   }
 });
 

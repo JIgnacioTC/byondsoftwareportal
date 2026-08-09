@@ -234,7 +234,9 @@ export default function Landing() {
 
   useEffect(() => {
     fetch('/api/public/plans').then(r => r.json()).then(data => {
-      setPlans(data);
+      if (Array.isArray(data)) {
+        setPlans(data);
+      }
       const planSlug = searchParams.get('plan');
       if (planSlug && Array.isArray(data)) {
         const found = data.find(p => p.slug === planSlug);

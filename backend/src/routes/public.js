@@ -27,7 +27,7 @@ router.get('/plans', async (req, res) => {
     res.json(data || []);
   } catch (err) {
     console.error('Error fetching public plans:', err);
-    res.status(500).json({ error: 'Error al obtener planes' });
+    res.status(500).json({ error: err.message || 'Error al obtener planes', details: err.stack });
   }
 });
 
