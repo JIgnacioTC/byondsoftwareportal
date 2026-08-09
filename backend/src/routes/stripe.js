@@ -62,24 +62,29 @@ router.post('/create-checkout-session', async (req, res) => {
       // Create product and price in Stripe
       const product = await stripe.products.create({
         name: `TORREN - ${plan.name}`,
-        description: `Plan ${plan.name}: ${plan.dev_hours_monthly} horas de desarrollo al mes`,
+        description: plan.dev_hours_monthly > 0 ? `Plan ${plan.name}: ${plan.dev_hours_monthly} horas al mes` : `Servicio ${plan.name}`,
         metadata: { planSlug: plan.slug },
       });
 
-      const price = await stripe.prices.create({
+      const priceParams = {
         product: product.id,
-        unit_amount: Math.round(parseFloat(plan.price_monthly) * 100),
+        unit_amount: Math.round(parseFloat(plan.base_price) * 100),
         currency: 'mxn',
-        recurring: { interval: 'month' },
         metadata: { planSlug: plan.slug },
-      });
+      };
+
+      if (plan.billing_type === 'monthly') {
+        priceParams.recurring = { interval: 'month' };
+      }
+
+      const price = await stripe.prices.create(priceParams);
 
       priceId = price.id;
 
       // Save stripe_price_id to plan
       await db
         .from('plans')
-        .update({ stripe_price_id: priceId })
+        .update({ stripe_price_id: priceId, stripe_product_id: product.id })
         .eq('id', plan.id);
     }
 
@@ -87,7 +92,7 @@ router.post('/create-checkout-session', async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       payment_method_types: ['card'],
-      mode: 'subscription',
+      mode: plan.billing_type === 'monthly' ? 'subscription' : 'payment',
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/stripe/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/stripe/cancel`,

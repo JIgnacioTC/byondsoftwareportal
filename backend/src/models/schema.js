@@ -39,9 +39,13 @@ export const plans = pgTable('plans', {
   id: serial('id').primaryKey(),
   name: varchar('name', { length: 100 }).notNull(),
   slug: varchar('slug', { length: 100 }).unique().notNull(),
-  priceMonthly: decimal('price_monthly', { precision: 10, scale: 2 }).notNull(),
-  devHoursMonthly: integer('dev_hours_monthly').notNull(),
+  basePrice: decimal('base_price', { precision: 10, scale: 2 }).notNull(),
+  billingType: varchar('billing_type', { length: 50 }).notNull().default('monthly'), // 'monthly', 'one-time', 'quote'
+  planFamily: varchar('plan_family', { length: 50 }).notNull().default('care'), // 'care', 'build', 'accelerated', 'project', 'custom', 'addon'
+  devHoursMonthly: integer('dev_hours_monthly').default(0),
   features: json('features').notNull().default([]),
+  stripeProductId: varchar('stripe_product_id', { length: 100 }),
+  stripePriceId: varchar('stripe_price_id', { length: 100 }),
   active: boolean('active').notNull().default(true),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: timestamp('created_at').notNull().defaultNow(),

@@ -46,10 +46,10 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const db = createAdminClient();
-    const { name, slug, priceMonthly, devHoursMonthly, features, active, sortOrder } = req.body;
+    const { name, slug, basePrice, billingType, planFamily, devHoursMonthly, features, active, sortOrder, stripeProductId, stripePriceId } = req.body;
 
-    if (!name || !slug || !priceMonthly || !devHoursMonthly) {
-      return res.status(400).json({ error: 'Nombre, slug, precio y horas son requeridos' });
+    if (!name || !slug || basePrice === undefined) {
+      return res.status(400).json({ error: 'Nombre, slug y precio base son requeridos' });
     }
 
     const { data, error } = await db
@@ -57,11 +57,15 @@ router.post('/', async (req, res) => {
       .insert({
         name,
         slug,
-        price_monthly: priceMonthly,
-        dev_hours_monthly: devHoursMonthly,
-        features: JSON.stringify(features || []),
+        base_price: basePrice,
+        billing_type: billingType || 'monthly',
+        plan_family: planFamily || 'care',
+        dev_hours_monthly: devHoursMonthly || 0,
+        features: features || [],
         active: active !== undefined ? active : true,
         sort_order: sortOrder || 0,
+        stripe_product_id: stripeProductId || null,
+        stripe_price_id: stripePriceId || null,
       })
       .select()
       .single();
@@ -78,16 +82,19 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const db = createAdminClient();
-    const { name, slug, priceMonthly, devHoursMonthly, features, active, sortOrder, stripePriceId } = req.body;
+    const { name, slug, basePrice, billingType, planFamily, devHoursMonthly, features, active, sortOrder, stripeProductId, stripePriceId } = req.body;
 
     const updates = {};
     if (name) updates.name = name;
     if (slug) updates.slug = slug;
-    if (priceMonthly) updates.price_monthly = priceMonthly;
-    if (devHoursMonthly) updates.dev_hours_monthly = devHoursMonthly;
-    if (features) updates.features = JSON.stringify(features);
+    if (basePrice !== undefined) updates.base_price = basePrice;
+    if (billingType !== undefined) updates.billing_type = billingType;
+    if (planFamily !== undefined) updates.plan_family = planFamily;
+    if (devHoursMonthly !== undefined) updates.dev_hours_monthly = devHoursMonthly;
+    if (features) updates.features = features; // No need JSON.stringify if db is jsonb or handled by supabase client natively, but let's see. Wait, before it was JSON.stringify. I'll just use features directly because supabase handles json arrays.
     if (active !== undefined) updates.active = active;
     if (sortOrder !== undefined) updates.sort_order = sortOrder;
+    if (stripeProductId !== undefined) updates.stripe_product_id = stripeProductId || null;
     if (stripePriceId !== undefined) updates.stripe_price_id = stripePriceId || null;
 
     const { data, error } = await db

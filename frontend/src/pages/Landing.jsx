@@ -199,6 +199,8 @@ function renderServiceIcon(iconName) {
   return <ServiceIcon name={iconName} size={32} color="#E6DACA" />;
 }
 
+import Navbar from '../components/Navbar';
+
 export default function Landing() {
   const [plans, setPlans] = useState([]);
   const [services, setServices] = useState([]);
@@ -210,6 +212,7 @@ export default function Landing() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [activePlanTab, setActivePlanTab] = useState('care'); // 'care', 'build', 'accelerated', 'project', 'custom'
 
   const servicesRef = useRef(null);
   const processRef = useRef(null);
@@ -249,23 +252,39 @@ export default function Landing() {
     setSubmitting(true);
     setError('');
     try {
-      const res = await fetch('/api/stripe/create-checkout-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          planSlug: selectedPlan?.slug,
-          email: form.email,
-          companyName: form.company,
-          contactName: form.contact,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Error');
-      if (data.url) {
-        window.location.href = data.url;
-        return;
+      if (selectedPlan?.billing_type === 'quote') {
+        const res = await fetch('/api/public/contact', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            planSlug: selectedPlan?.slug,
+            email: form.email,
+            companyName: form.company,
+            contactName: form.contact,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error');
+        setSuccess(true);
+      } else {
+        const res = await fetch('/api/stripe/create-checkout-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            planSlug: selectedPlan?.slug,
+            email: form.email,
+            companyName: form.company,
+            contactName: form.contact,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error');
+        if (data.url) {
+          window.location.href = data.url;
+          return;
+        }
+        setSuccess(true);
       }
-      setSuccess(true);
     } catch {
       setError('No se pudo procesar. Intenta de nuevo.');
     } finally {
@@ -307,6 +326,7 @@ export default function Landing() {
 
   return (
     <div>
+      <Navbar />
       {/* ============ HERO ============ */}
       <section style={S.hero}>
         <div style={S.heroOverlay} />
@@ -541,15 +561,48 @@ export default function Landing() {
             <p>{pricingSubtitle}</p>
             <div className="section-divider" />
           </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 40, flexWrap: 'wrap' }}>
+            {[
+              { id: 'care', label: 'Hosting & Care' },
+              { id: 'build', label: 'TORREN Build' },
+              { id: 'accelerated', label: 'TORREN Accelerated' },
+              { id: 'project', label: 'Proyectos & MVP' },
+              { id: 'custom', label: 'Empresarial' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActivePlanTab(tab.id)}
+                style={{
+                  padding: '10px 24px',
+                  background: activePlanTab === tab.id ? '#E6DACA' : 'rgba(26,46,68,0.5)',
+                  color: activePlanTab === tab.id ? '#0F1E2D' : '#E6DACA',
+                  border: '1px solid rgba(196,180,159,0.2)',
+                  borderRadius: 30,
+                  cursor: 'pointer',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontWeight: 600,
+                  transition: 'all 0.3s ease',
+                  fontSize: 14,
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
           <div style={{
             ...S.pricingGrid,
             opacity: pricingVisible ? 1 : 0,
             transform: pricingVisible ? 'translateY(0)' : 'translateY(30px)',
             transition: 'all 0.8s cubic-bezier(0.4,0,0.2,1)',
           }}>
-            {plans.map((plan, i) => {
-              const isFeatured = plan.slug === 'growth';
+            {plans.filter(p => p.plan_family === activePlanTab).map((plan, i) => {
+              const isFeatured = plan.slug.includes('growth') || plan.slug.includes('standard');
+              const isQuote = plan.billing_type === 'quote';
+              const isMonthly = plan.billing_type === 'monthly';
               const features = typeof plan.features === 'string' ? JSON.parse(plan.features) : plan.features || [];
+              
               return (
                 <div
                   key={plan.id}
@@ -594,18 +647,31 @@ export default function Landing() {
                     marginBottom: 8,
                   }}>{plan.name}</h3>
                   <div style={{ marginBottom: 8 }}>
-                    <span style={{
-                      fontFamily: "'Space Grotesk', sans-serif",
-                      fontSize: 40,
-                      fontWeight: 700,
-                      color: '#E6DACA',
-                    }}>{formatMXN(plan.price_monthly)}</span>
-                    <span style={{ fontSize: 14, color: '#C4B49F' }}>/mes</span>
+                    {isQuote ? (
+                      <span style={{
+                        fontFamily: "'Space Grotesk', sans-serif",
+                        fontSize: 24,
+                        fontWeight: 700,
+                        color: '#E6DACA',
+                      }}>Cotización a la medida</span>
+                    ) : (
+                      <>
+                        <span style={{
+                          fontFamily: "'Space Grotesk', sans-serif",
+                          fontSize: 40,
+                          fontWeight: 700,
+                          color: '#E6DACA',
+                        }}>{formatMXN(plan.base_price)}</span>
+                        {isMonthly && <span style={{ fontSize: 14, color: '#C4B49F' }}>/mes</span>}
+                      </>
+                    )}
                   </div>
-                  <p style={{ fontSize: 14, color: '#C4B49F', marginBottom: 24 }}>
-                    {plan.dev_hours_monthly} horas de desarrollo al mes
-                  </p>
-                  <ul style={{ listStyle: 'none', padding: 0, marginBottom: 32, flex: 1 }}>
+                  {plan.dev_hours_monthly > 0 && (
+                    <p style={{ fontSize: 14, color: '#C4B49F', marginBottom: 24 }}>
+                      {plan.dev_hours_monthly} horas de desarrollo al mes
+                    </p>
+                  )}
+                  <ul style={{ listStyle: 'none', padding: 0, marginBottom: 32, flex: 1, marginTop: plan.dev_hours_monthly > 0 ? 0 : 24 }}>
                     {features.map((f, j) => (
                       <li key={j} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', fontSize: 14, color: '#C4B49F', borderBottom: j < features.length - 1 ? '1px solid rgba(196,180,159,0.08)' : 'none' }}>
                         <IconCheck size={16} color="#E6DACA" />
@@ -618,7 +684,7 @@ export default function Landing() {
                     className={isFeatured ? 'btn-cta' : 'btn-secondary'}
                     style={{ width: '100%' }}
                   >
-                    Contratar
+                    {isQuote ? 'Agendar Llamada' : 'Contratar'}
                   </button>
                 </div>
               );
@@ -731,9 +797,10 @@ export default function Landing() {
                   textTransform: 'uppercase',
                   color: '#E6DACA',
                   marginBottom: 8,
-                }}>Contratar Plan</h3>
+                }}>{selectedPlan?.billing_type === 'quote' ? 'Agendar Llamada' : 'Contratar Plan'}</h3>
                 <p style={{ color: '#C4B49F', fontSize: 14, marginBottom: 32 }}>
-                  Plan seleccionado: <strong style={{ color: '#E6DACA' }}>{selectedPlan?.name}</strong> — {formatMXN(selectedPlan?.price_monthly)}/mes
+                  Plan seleccionado: <strong style={{ color: '#E6DACA' }}>{selectedPlan?.name}</strong> 
+                  {selectedPlan?.billing_type !== 'quote' && ` — ${formatMXN(selectedPlan?.base_price)}${selectedPlan?.billing_type === 'monthly' ? '/mes' : ''}`}
                 </p>
                 <form onSubmit={handleSubmit}>
                   <label style={labelStyle}>Empresa</label>
@@ -762,13 +829,15 @@ export default function Landing() {
                     placeholder="tu@empresa.com"
                   />
                   {error && <p style={{ color: '#ef4444', fontSize: 13, marginBottom: 16 }}>{error}</p>}
-                  <p style={{ fontSize: 12, color: '#C4B49F', marginBottom: 16, lineHeight: 1.5 }}>
-                    Seras redirigido a Stripe para completar el pago de forma segura.
-                  </p>
+                  {selectedPlan?.billing_type !== 'quote' && (
+                    <p style={{ fontSize: 12, color: '#C4B49F', marginBottom: 16, lineHeight: 1.5 }}>
+                      Seras redirigido a Stripe para completar el pago de forma segura.
+                    </p>
+                  )}
                   <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
                     <button type="button" onClick={closeModal} className="btn-secondary" style={{ flex: 1 }}>Cancelar</button>
                     <button type="submit" disabled={submitting} className="btn-cta" style={{ flex: 1 }}>
-                      {submitting ? 'Procesando...' : 'Ir a pagar'}
+                      {submitting ? 'Procesando...' : (selectedPlan?.billing_type === 'quote' ? 'Enviar Solicitud' : 'Ir a pagar')}
                     </button>
                   </div>
                 </form>

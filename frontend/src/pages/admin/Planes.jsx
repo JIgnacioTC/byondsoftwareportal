@@ -5,7 +5,7 @@ export default function Planes() {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingPlan, setEditingPlan] = useState(null);
-  const [form, setForm] = useState({ priceMonthly: '', devHoursMonthly: '', features: '', active: true, stripePriceId: '' });
+  const [form, setForm] = useState({ basePrice: '', devHoursMonthly: '', features: '', active: true, stripePriceId: '', billingType: 'monthly', planFamily: 'care' });
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(null);
   const [syncResult, setSyncResult] = useState(null);
@@ -30,7 +30,9 @@ export default function Planes() {
       ? plan.features.join('\n')
       : (plan.features || '');
     setForm({
-      priceMonthly: plan.price_monthly ?? '',
+      basePrice: plan.base_price ?? '',
+      billingType: plan.billing_type ?? 'monthly',
+      planFamily: plan.plan_family ?? 'care',
       devHoursMonthly: plan.dev_hours_monthly ?? '',
       features,
       active: plan.active !== undefined ? plan.active : true,
@@ -46,7 +48,9 @@ export default function Planes() {
         .map((f) => f.trim())
         .filter(Boolean);
       await api.updatePlan(editingPlan.id, {
-        priceMonthly: parseFloat(form.priceMonthly) || 0,
+        basePrice: parseFloat(form.basePrice) || 0,
+        billingType: form.billingType,
+        planFamily: form.planFamily,
         devHoursMonthly: parseFloat(form.devHoursMonthly) || 0,
         features: featuresList,
         active: form.active,
@@ -120,8 +124,8 @@ export default function Planes() {
               <input
                 type="number"
                 step="0.01"
-                value={form.priceMonthly}
-                onChange={(e) => setForm({ ...form, priceMonthly: e.target.value })}
+                value={form.basePrice}
+                onChange={(e) => setForm({ ...form, basePrice: e.target.value })}
                 style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, boxSizing: 'border-box' }}
               />
             </div>
@@ -236,7 +240,7 @@ export default function Planes() {
                     <div style={{ fontSize: 12, color: '#6b7280', fontFamily: 'monospace' }}>{plan.slug}</div>
                   </td>
                   <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: 14, fontWeight: 500, color: '#111' }}>
-                    ${Number(plan.price_monthly || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    ${Number(plan.base_price || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                   </td>
                   <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: 14, color: '#111' }}>
                     {plan.dev_hours_monthly ?? '—'}h

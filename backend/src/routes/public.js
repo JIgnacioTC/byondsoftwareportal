@@ -19,7 +19,7 @@ router.get('/plans', async (req, res) => {
     const db = createAdminClient();
     const { data, error } = await db
       .from('plans')
-      .select('id, name, slug, price_monthly, dev_hours_monthly, features')
+      .select('id, name, slug, base_price, billing_type, plan_family, dev_hours_monthly, features, stripe_product_id, stripe_price_id')
       .eq('active', true)
       .order('sort_order', { ascending: true });
 

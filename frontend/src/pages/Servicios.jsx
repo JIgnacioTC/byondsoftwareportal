@@ -190,10 +190,7 @@ export default function Servicios() {
 
       <section className="section" style={{ background: '#0F1E2D' }}>
         <div className="container">
-          <div ref={svcRef} style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 32,
+          <div ref={svcRef} className="services-bento-grid" style={{
             opacity: svcVisible ? 1 : 0,
             transform: svcVisible ? 'translateY(0)' : 'translateY(30px)',
             transition: 'all 0.8s cubic-bezier(0.4,0,0.2,1)',
@@ -320,6 +317,26 @@ export default function Servicios() {
       <Footer />
 
       <style>{`
+        .services-bento-grid {
+          display: grid;
+          grid-template-columns: repeat(12, 1fr);
+          gap: 24px;
+        }
+        .services-bento-grid > div {
+          grid-column: span 12;
+          display: flex;
+          flex-direction: column;
+        }
+        @media (min-width: 900px) {
+          .services-bento-grid > div:nth-child(4n + 1),
+          .services-bento-grid > div:nth-child(4n + 4) {
+            grid-column: span 7;
+          }
+          .services-bento-grid > div:nth-child(4n + 2),
+          .services-bento-grid > div:nth-child(4n + 3) {
+            grid-column: span 5;
+          }
+        }
         @media (max-width: 768px) {
           .process-grid { grid-template-columns: repeat(2, 1fr) !important; }
           .process-line { display: none !important; }

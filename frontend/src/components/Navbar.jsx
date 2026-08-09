@@ -33,6 +33,7 @@ export default function Navbar() {
     WebkitBackdropFilter: 'blur(20px)',
     borderBottom: scrolled ? '1px solid rgba(196,180,159,0.1)' : '1px solid transparent',
     transition: 'all 0.4s cubic-bezier(0.4,0,0.2,1)',
+    transform: (isHome && !scrolled) ? 'translateY(-100%)' : 'translateY(0)',
   };
 
   const inner = {
