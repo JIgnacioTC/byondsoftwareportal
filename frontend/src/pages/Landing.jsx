@@ -187,6 +187,78 @@ const S = {
     border: '1px solid rgba(230,218,202,0.25)',
     transform: 'scale(1.03)',
   },
+  planTabBar: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: 4,
+    padding: '0 16px',
+    overflowX: 'auto',
+    border: '1px solid rgba(196,180,159,0.14)',
+    borderBottom: 'none',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    background: 'rgba(15,30,45,0.55)',
+  },
+  planTab: {
+    position: 'relative',
+    padding: '18px 22px',
+    background: 'transparent',
+    border: 'none',
+    borderBottomWidth: 3,
+    borderBottomStyle: 'solid',
+    borderBottomColor: 'transparent',
+    color: '#8FA3B8',
+    fontFamily: "'Space Grotesk', sans-serif",
+    fontWeight: 600,
+    fontSize: 13,
+    letterSpacing: '0.04em',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    whiteSpace: 'nowrap',
+    transition: 'color 0.25s ease, border-bottom-color 0.25s ease',
+  },
+  // Always defines the same keys as planTab (just different values) so the merged
+  // style never drops a property between renders — omitting a key on deactivation
+  // previously left border-bottom-color "stuck" instead of reverting to transparent.
+  planTabActive: {
+    color: '#E6DACA',
+    borderBottomColor: '#E6DACA',
+    fontWeight: 700,
+  },
+  planTabInactive: {
+    color: '#8FA3B8',
+    borderBottomColor: 'transparent',
+    fontWeight: 600,
+  },
+  planTabGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  planTabGroupDivider: {
+    borderLeft: '1px solid rgba(196,180,159,0.14)',
+    marginLeft: 6,
+    paddingLeft: 6,
+  },
+  planTabGroupLabel: {
+    display: 'block',
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    color: 'rgba(196,180,159,0.45)',
+    padding: '10px 22px 2px',
+    whiteSpace: 'nowrap',
+  },
+  planPanel: {
+    border: '1px solid rgba(196,180,159,0.14)',
+    borderTop: 'none',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    background: 'rgba(15,30,45,0.3)',
+    padding: '40px 32px',
+  },
 
   /* CTA */
   ctaSection: {
@@ -208,6 +280,7 @@ export default function Landing() {
   const [searchParams] = useSearchParams();
 
   const [plans, setPlans] = useState([]);
+  const [plansLoading, setPlansLoading] = useState(true);
   const [services, setServices] = useState([]);
   const [stats, setStats] = useState(null);
   const [content, setContent] = useState({});
@@ -218,7 +291,8 @@ export default function Landing() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
-  const [activePlanTab, setActivePlanTab] = useState('all');
+  const [activePlanTab, setActivePlanTab] = useState('accelerated');
+  const planTabRefs = useRef({});
 
   const servicesRef = useRef(null);
   const processRef = useRef(null);
@@ -244,7 +318,7 @@ export default function Landing() {
           openModal(found);
         }
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setPlansLoading(false));
     fetch('/api/public/services').then(r => r.json()).then(setServices).catch(() => {});
     fetch('/api/public/stats').then(r => r.json()).then(setStats).catch(() => {});
     fetch('/api/public/content').then(r => r.json()).then(setContent).catch(() => {});
@@ -350,6 +424,49 @@ export default function Landing() {
 
   const pricingHeading = content.pricing?.heading || 'Planes';
   const pricingSubtitle = content.pricing?.subtitle || 'Elige el plan que mejor se adapte a las necesidades de tu empresa.';
+
+  // Groups cluster the tabs visually (label + divider) so it's clear at a glance
+  // which plans involve development, AI-accelerated development, or neither.
+  // "project" and "custom" each bundle a Standard (human) and an Accelerated (AI)
+  // variant internally, so they're grouped under their own "Solución Empresarial"
+  // cluster rather than forced into the dev/AI-dev buckets.
+  const planGroupDefs = [
+    { key: 'sin-desarrollo', label: 'Sin desarrollo' },
+    { key: 'con-desarrollo', label: 'Con desarrollo' },
+    { key: 'con-ia', label: 'Con IA' },
+    { key: 'empresarial', label: 'Solución Empresarial' },
+  ];
+  const planTabDefs = [
+    { id: 'care', label: 'Hosting & Care', group: 'sin-desarrollo' },
+    { id: 'build', label: 'TORREN Build', group: 'con-desarrollo' },
+    { id: 'accelerated', label: 'TORREN Accelerated', group: 'con-ia' },
+    { id: 'project', label: 'Proyectos & MVP', group: 'empresarial' },
+    { id: 'custom', label: 'Empresarial', group: 'empresarial' },
+  ];
+  // While plans are still loading, keep every category tab visible instead of
+  // hiding the ones with a 0 count — otherwise nothing would exist at first
+  // paint and tabs would pop in once the fetch resolves.
+  const visiblePlanTabs = planTabDefs
+    .map(tab => ({ ...tab, count: plans.filter(p => p.plan_family === tab.id).length }))
+    .filter(tab => plansLoading || tab.count > 0);
+  const visiblePlanGroups = planGroupDefs
+    .map(group => ({ ...group, tabs: visiblePlanTabs.filter(t => t.group === group.key) }))
+    .filter(group => group.tabs.length > 0);
+
+  function handlePlanTabKeyDown(e) {
+    const idx = visiblePlanTabs.findIndex(t => t.id === activePlanTab);
+    if (idx === -1) return;
+    let nextIdx = null;
+    if (e.key === 'ArrowRight') nextIdx = (idx + 1) % visiblePlanTabs.length;
+    else if (e.key === 'ArrowLeft') nextIdx = (idx - 1 + visiblePlanTabs.length) % visiblePlanTabs.length;
+    else if (e.key === 'Home') nextIdx = 0;
+    else if (e.key === 'End') nextIdx = visiblePlanTabs.length - 1;
+    if (nextIdx === null) return;
+    e.preventDefault();
+    const nextTab = visiblePlanTabs[nextIdx];
+    setActivePlanTab(nextTab.id);
+    planTabRefs.current[nextTab.id]?.focus();
+  }
 
   const ctaHeading = content.cta?.heading || '¿Listo para transformar tu software?';
   const ctaSubtitle = content.cta?.subtitle || 'Agenda una consulta gratuita y descubre como podemos ayudar a tu empresa a crecer con tecnologia.';
@@ -596,71 +713,81 @@ export default function Landing() {
             <div className="section-divider" />
           </div>
 
-          <div role="tablist" aria-label="Categorías de planes" style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 40, flexWrap: 'wrap' }}>
-            {[
-              { id: 'all', label: 'Todos' },
-              { id: 'care', label: 'Hosting & Care' },
-              { id: 'build', label: 'TORREN Build' },
-              { id: 'accelerated', label: 'TORREN Accelerated' },
-              { id: 'project', label: 'Proyectos & MVP' },
-              { id: 'custom', label: 'Empresarial' },
-            ].map(tab => {
-              const count = tab.id === 'all'
-                ? plans.length
-                : plans.filter(p => p.plan_family === tab.id).length;
-              if (tab.id !== 'all' && count === 0) return null;
-
-              const isActive = activePlanTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  role="tab"
-                  aria-selected={isActive}
-                  aria-controls="planes-grid"
-                  onClick={() => setActivePlanTab(tab.id)}
-                  style={{
-                    padding: '10px 22px',
-                    background: isActive ? '#E6DACA' : 'rgba(26,46,68,0.5)',
-                    color: isActive ? '#0F1E2D' : '#E6DACA',
-                    border: isActive ? '1px solid #E6DACA' : '1px solid rgba(196,180,159,0.2)',
-                    borderRadius: 30,
-                    cursor: 'pointer',
-                    fontFamily: "'Space Grotesk', sans-serif",
-                    fontWeight: 600,
-                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    fontSize: 13,
-                    letterSpacing: '0.04em',
-                    boxShadow: isActive ? '0 4px 20px rgba(230,218,202,0.25)' : 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                  }}
-                >
-                  <span>{tab.label}</span>
-                  {count > 0 && (
-                    <span style={{
-                      fontSize: 11,
-                      padding: '2px 7px',
-                      borderRadius: 10,
-                      background: isActive ? 'rgba(15,30,45,0.15)' : 'rgba(230,218,202,0.15)',
-                      color: isActive ? '#0F1E2D' : '#C4B49F',
-                      fontWeight: 700,
-                    }}>
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          <div
+            role="tablist"
+            aria-label="Categorías de planes"
+            className="plan-tabbar"
+            style={S.planTabBar}
+            onKeyDown={handlePlanTabKeyDown}
+          >
+            {visiblePlanGroups.map((group, gi) => (
+              // role="presentation" flattens this wrapper out of the accessibility
+              // tree so the buttons inside still read as direct children of the
+              // tablist above, per the ARIA tabs pattern — the grouping is purely visual.
+              <div key={group.key} role="presentation" className="plan-tab-group" style={{ ...S.planTabGroup, ...(gi > 0 ? S.planTabGroupDivider : {}) }}>
+                <span aria-hidden="true" style={S.planTabGroupLabel}>{group.label}</span>
+                <div role="presentation" style={{ display: 'flex' }}>
+                  {group.tabs.map(tab => {
+                    const isActive = activePlanTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        ref={(el) => { planTabRefs.current[tab.id] = el; }}
+                        role="tab"
+                        id={`plan-tab-${tab.id}`}
+                        aria-selected={isActive}
+                        aria-controls="planes-grid"
+                        tabIndex={isActive ? 0 : -1}
+                        onClick={() => setActivePlanTab(tab.id)}
+                        className="plan-tab"
+                        style={{ ...S.planTab, ...(isActive ? S.planTabActive : S.planTabInactive) }}
+                      >
+                        <span>{tab.label}</span>
+                        {tab.count > 0 && (
+                          <span style={{
+                            fontSize: 11,
+                            padding: '2px 7px',
+                            borderRadius: 10,
+                            background: isActive ? 'rgba(230,218,202,0.15)' : 'rgba(196,180,159,0.1)',
+                            color: isActive ? '#E6DACA' : '#8FA3B8',
+                            fontWeight: 700,
+                          }}>
+                            {tab.count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
 
-          <div id="planes-grid" role="tabpanel" style={{
+          <div
+            id="planes-grid"
+            role="tabpanel"
+            aria-labelledby={`plan-tab-${activePlanTab}`}
+            tabIndex={0}
+            style={S.planPanel}
+          >
+          <div style={{
             ...S.pricingGrid,
             opacity: pricingVisible ? 1 : 0,
             transform: pricingVisible ? 'translateY(0)' : 'translateY(30px)',
             transition: 'all 0.8s cubic-bezier(0.4,0,0.2,1)',
           }}>
-            {plans.filter(p => activePlanTab === 'all' || p.plan_family === activePlanTab).map((plan, i) => {
+            {plansLoading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="plan-skeleton" style={{ ...S.priceCard, animationDelay: `${i * 0.1}s` }} aria-hidden="true">
+                  <div className="plan-skeleton-line" style={{ width: '60%', height: 18, marginBottom: 20 }} />
+                  <div className="plan-skeleton-line" style={{ width: '40%', height: 36, marginBottom: 24 }} />
+                  <div className="plan-skeleton-line" style={{ width: '90%', height: 12, marginBottom: 10 }} />
+                  <div className="plan-skeleton-line" style={{ width: '80%', height: 12, marginBottom: 10 }} />
+                  <div className="plan-skeleton-line" style={{ width: '85%', height: 12, marginBottom: 32 }} />
+                  <div className="plan-skeleton-line" style={{ width: '100%', height: 44, marginTop: 'auto' }} />
+                </div>
+              ))
+            ) : plans.filter(p => p.plan_family === activePlanTab).map((plan, i) => {
               const isFeatured = plan.slug.includes('growth') || plan.slug.includes('standard');
               const isQuote = plan.billing_type === 'quote';
               const isMonthly = plan.billing_type === 'monthly';
@@ -752,6 +879,7 @@ export default function Landing() {
                 </div>
               );
             })}
+          </div>
           </div>
         </div>
       </section>
@@ -1028,6 +1156,23 @@ export default function Landing() {
         @media (max-width: 480px) {
           .stats-grid { grid-template-columns: 1fr !important; }
           .process-grid { grid-template-columns: 1fr !important; }
+        }
+        .plan-tabbar { scrollbar-width: thin; scrollbar-color: rgba(196,180,159,0.3) transparent; }
+        .plan-tabbar::-webkit-scrollbar { height: 4px; }
+        .plan-tabbar::-webkit-scrollbar-thumb { background: rgba(196,180,159,0.3); border-radius: 4px; }
+        .plan-tab:hover { color: #E6DACA; }
+        .plan-tab:focus-visible { outline: 2px solid #E6DACA; outline-offset: -2px; border-radius: 4px; }
+        @media (max-width: 640px) {
+          .plan-tabbar { padding: 0 8px; }
+        }
+        .plan-skeleton { display: flex; flex-direction: column; animation: plan-skeleton-fade 1.4s ease-in-out infinite; }
+        .plan-skeleton-line { background: rgba(196,180,159,0.12); border-radius: 6px; }
+        @keyframes plan-skeleton-fade {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 1; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .plan-skeleton { animation: none; }
         }
       `}</style>
     </div>

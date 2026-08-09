@@ -9,6 +9,110 @@ function getStripe() {
 }
 
 /**
+ * Inserts a monthly hour allocation for a client/period if one doesn't already exist.
+ * Idempotent by (client_id, type='allocation', period) so it's safe to call on retries
+ * or on both checkout.session.completed and invoice.paid for the same billing period.
+ */
+async function allocateHoursForPeriod(db, { clientId, planName, hours, period }) {
+  const { data: existingAllocations } = await db
+    .from('hour_ledger')
+    .select('id, hours')
+    .eq('client_id', clientId)
+    .eq('type', 'allocation')
+    .eq('period', period)
+    .limit(1);
+
+  if (existingAllocations && existingAllocations.length > 0) {
+    return { allocated: false, hours: existingAllocations[0].hours, period };
+  }
+
+  const { error: ledgerError } = await db
+    .from('hour_ledger')
+    .insert({
+      client_id: clientId,
+      type: 'allocation',
+      hours,
+      description: `Asignación mensual plan ${planName} - ${period}`,
+      period,
+    });
+
+  if (ledgerError) {
+    console.error('Error inserting hour allocation:', ledgerError);
+    throw ledgerError;
+  }
+
+  console.log(`Allocated ${hours}h for client ${clientId} (${planName}) in period ${period}`);
+  return { allocated: true, hours, period };
+}
+
+/**
+ * Handles Stripe's `invoice.paid` event for subscription renewals.
+ * checkout.session.completed already allocates hours for the plan's first billing
+ * period, so this only needs to act on renewal invoices (billing_reason
+ * 'subscription_cycle') — new hours for the month the client just paid for.
+ */
+export async function allocateRenewalHours(invoice) {
+  const db = createAdminClient();
+
+  if (invoice.billing_reason !== 'subscription_cycle') {
+    console.log(`Invoice ${invoice.id} billing_reason is '${invoice.billing_reason}', not a renewal cycle; skipping hour allocation`);
+    return null;
+  }
+
+  const subscriptionId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
+  if (!subscriptionId) {
+    console.warn(`Invoice ${invoice.id} has no subscription; skipping hour allocation`);
+    return null;
+  }
+
+  const { data: subRecord, error: subFetchErr } = await db
+    .from('subscriptions')
+    .select('*, clients(*), plans(*)')
+    .eq('stripe_subscription_id', subscriptionId)
+    .limit(1)
+    .single();
+
+  if (subFetchErr || !subRecord) {
+    console.warn(`No local subscription found for Stripe subscription ${subscriptionId}; cannot allocate renewal hours`);
+    return null;
+  }
+
+  const plan = subRecord.plans;
+  const client = subRecord.clients;
+  if (!plan || !client) {
+    console.warn(`Subscription ${subscriptionId} is missing linked plan/client; cannot allocate renewal hours`);
+    return null;
+  }
+
+  // Prefer the billing period reported by the invoice line item over "now",
+  // so the allocation is labeled with the period the client actually paid for.
+  const line = invoice.lines?.data?.[0];
+  const periodStartSec = line?.period?.start || invoice.period_start;
+  const periodEndSec = line?.period?.end || invoice.period_end;
+  const periodDate = periodStartSec ? new Date(periodStartSec * 1000) : new Date();
+  const period = `${periodDate.getFullYear()}-${String(periodDate.getMonth() + 1).padStart(2, '0')}`;
+
+  const result = await allocateHoursForPeriod(db, {
+    clientId: client.id,
+    planName: plan.name,
+    hours: plan.dev_hours_monthly || 0,
+    period,
+  });
+
+  // Keep the subscription's billing period window in sync with Stripe.
+  await db
+    .from('subscriptions')
+    .update({
+      status: 'activa',
+      current_period_start: periodStartSec ? new Date(periodStartSec * 1000).toISOString() : subRecord.current_period_start,
+      current_period_end: periodEndSec ? new Date(periodEndSec * 1000).toISOString() : subRecord.current_period_end,
+    })
+    .eq('id', subRecord.id);
+
+  return { ...result, clientId: client.id, planName: plan.name };
+}
+
+/**
  * Fulfill checkout session idempotently:
  * 1. Resolves customer, plan and subscription details.
  * 2. Creates or activates Client in DB.
@@ -318,38 +422,18 @@ export async function fulfillCheckoutSession(sessionIdOrSession) {
     subRecord = newSub;
   }
 
-  // 5. Allocate Monthly Development Hours in hour_ledger
+  // 5. Allocate Monthly Development Hours in hour_ledger for the current period.
+  // Renewal periods (month 2+) are allocated separately by allocateRenewalHours()
+  // when Stripe fires `invoice.paid` for the subscription's billing cycle.
   const now = new Date();
   const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  let hoursAllocated = plan.dev_hours_monthly || 0;
 
-  const { data: existingAllocations } = await db
-    .from('hour_ledger')
-    .select('id, hours')
-    .eq('client_id', client.id)
-    .eq('type', 'allocation')
-    .eq('period', currentPeriod)
-    .limit(1);
-
-  if (!existingAllocations || existingAllocations.length === 0) {
-    const { error: ledgerError } = await db
-      .from('hour_ledger')
-      .insert({
-        client_id: client.id,
-        type: 'allocation',
-        hours: hoursAllocated,
-        description: `Asignación mensual plan ${plan.name} - ${currentPeriod}`,
-        period: currentPeriod,
-      });
-
-    if (ledgerError) {
-      console.error('Error inserting hour allocation:', ledgerError);
-    } else {
-      console.log(`Allocated ${hoursAllocated}h for client ${client.id} (${companyName}) in period ${currentPeriod}`);
-    }
-  } else {
-    hoursAllocated = existingAllocations[0].hours;
-  }
+  const { hours: hoursAllocated } = await allocateHoursForPeriod(db, {
+    clientId: client.id,
+    planName: plan.name,
+    hours: plan.dev_hours_monthly || 0,
+    period: currentPeriod,
+  });
 
   return {
     success: true,

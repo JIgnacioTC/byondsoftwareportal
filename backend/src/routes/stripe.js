@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import Stripe from 'stripe';
 import { createAdminClient } from '../config/supabase.js';
-import { fulfillCheckoutSession } from '../services/subscriptionProvisioning.js';
+import { fulfillCheckoutSession, allocateRenewalHours } from '../services/subscriptionProvisioning.js';
 
 const router = Router();
 
@@ -187,7 +187,16 @@ router.post('/webhook', async (req, res) => {
       }
 
       case 'invoice.paid': {
-        console.log(`Invoice ${event.data.object.id} paid`);
+        const invoice = event.data.object;
+        console.log(`Invoice ${invoice.id} paid (billing_reason: ${invoice.billing_reason})`);
+        try {
+          const result = await allocateRenewalHours(invoice);
+          if (result?.allocated) {
+            console.log(`Renewal hours allocated for invoice ${invoice.id}:`, result);
+          }
+        } catch (err) {
+          console.error(`Error allocating renewal hours for invoice ${invoice.id}:`, err);
+        }
         break;
       }
 
