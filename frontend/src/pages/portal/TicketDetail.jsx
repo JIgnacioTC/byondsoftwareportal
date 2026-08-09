@@ -1,29 +1,13 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
-
-const statusColors = {
-  nuevo: { bg: '#dbeafe', text: '#1d4ed8', label: 'Nuevo' },
-  en_analisis: { bg: '#fef9c3', text: '#a16207', label: 'En análisis' },
-  en_progreso: { bg: '#ffedd5', text: '#c2410c', label: 'En progreso' },
-  esperando_cliente: { bg: '#f3e8ff', text: '#7c3aed', label: 'Esperando cliente' },
-  resuelto: { bg: '#dcfce7', text: '#15803d', label: 'Resuelto' },
-  cerrado: { bg: '#f3f4f6', text: '#6b7280', label: 'Cerrado' },
-};
-
-const priorityColors = {
-  baja: { bg: '#f3f4f6', text: '#6b7280', label: 'Baja' },
-  media: { bg: '#dbeafe', text: '#1d4ed8', label: 'Media' },
-  alta: { bg: '#ffedd5', text: '#c2410c', label: 'Alta' },
-  critica: { bg: '#fef2f2', text: '#dc2626', label: 'Crítica' },
-};
-
-const typeLabels = {
-  soporte: 'Soporte',
-  bug: 'Bug',
-  nuevo_desarrollo: 'Nuevo desarrollo',
-  actualizacion: 'Actualización',
-};
+import {
+  Alert, Badge, Button, Card, DefinitionList, EmptyState, Loading, Textarea,
+} from '../../components/ui';
+import {
+  TICKET_PRIORITY, TICKET_STATUS, TICKET_TYPE, describe, formatDateTime, initials,
+} from '../../lib/domain';
+import { IconArrowLeft, IconMessage, IconSend } from '../../components/Icons';
 
 export default function TicketDetail() {
   const { id } = useParams();
@@ -33,237 +17,168 @@ export default function TicketDetail() {
   const [error, setError] = useState(null);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [actionError, setActionError] = useState(null);
 
-  const fetchTicket = () => {
+  const fetchTicket = useCallback(async () => {
     setLoading(true);
-    api.getClientTicket(id)
-      .then(setTicket)
-      .catch((err) => setError(err.message || 'Error al cargar ticket'))
-      .finally(() => setLoading(false));
-  };
+    setError(null);
+    try {
+      setTicket(await api.getClientTicket(id));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
 
-  useEffect(() => { fetchTicket(); }, [id]);
+  useEffect(() => { fetchTicket(); }, [fetchTicket]);
 
   const handleAddComment = async (e) => {
     e.preventDefault();
-    if (!comment.trim()) return;
+    const body = comment.trim();
+    if (!body) return;
     setSubmitting(true);
+    setActionError(null);
     try {
-      await api.addClientComment(id, { texto: comment.trim() });
+      await api.addClientComment(id, body);
       setComment('');
-      fetchTicket();
+      await fetchTicket();
     } catch (err) {
-      alert(err.message || 'Error al agregar comentario');
+      setActionError(err.message);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleStatusChange = async (newStatus) => {
+  const handleStatusChange = async (status) => {
+    setActionError(null);
     try {
-      await api.updateClientTicketStatus(id, { estado: newStatus });
-      fetchTicket();
+      await api.updateClientTicketStatus(id, status);
+      await fetchTicket();
     } catch (err) {
-      alert(err.message || 'Error al actualizar estado');
+      setActionError(err.message);
     }
   };
 
-  if (loading) return <div style={styles.empty}>Cargando ticket...</div>;
-  if (error) return <div style={{ ...styles.empty, color: '#dc2626' }}>{error}</div>;
-  if (!ticket) return <div style={styles.empty}>Ticket no encontrado</div>;
+  if (loading) return <Loading label="Cargando ticket…" />;
+  if (error) {
+    return (
+      <>
+        <Button variant="ghost" size="sm" onClick={() => navigate('/portal/tickets')} style={{ marginBottom: 16 }}>
+          <IconArrowLeft size={15} color="currentColor" /> Volver a tickets
+        </Button>
+        <Alert tone="danger" title="No pudimos cargar el ticket">{error}</Alert>
+      </>
+    );
+  }
+  if (!ticket) return null;
 
-  const publicComments = (ticket.comentarios || []).filter((c) => !c.interno);
+  const status = describe(TICKET_STATUS, ticket.status);
+  const priority = describe(TICKET_PRIORITY, ticket.priority);
+  const type = describe(TICKET_TYPE, ticket.type);
+  const comments = ticket.comments || [];
 
   return (
-    <div style={styles.page}>
-      <button style={styles.backBtn} onClick={() => navigate('/portal/tickets')}>← Volver a tickets</button>
+    <>
+      <Button variant="ghost" size="sm" onClick={() => navigate('/portal/tickets')} style={{ marginBottom: 14 }}>
+        <IconArrowLeft size={15} color="currentColor" /> Volver a tickets
+      </Button>
 
-      {/* Header */}
-      <div style={styles.header}>
-        <div>
-          <div style={styles.folioRow}>
-            <span style={styles.folio}>#{ticket.folio}</span>
-            <span style={{
-              ...styles.badge,
-              background: statusColors[ticket.estado]?.bg,
-              color: statusColors[ticket.estado]?.text,
-            }}>
-              {statusColors[ticket.estado]?.label || ticket.estado}
-            </span>
-            <span style={{
-              ...styles.badge,
-              background: priorityColors[ticket.prioridad]?.bg,
-              color: priorityColors[ticket.prioridad]?.text,
-            }}>
-              {priorityColors[ticket.prioridad]?.label || ticket.prioridad}
-            </span>
-          </div>
-          <h1 style={styles.title}>{ticket.titulo}</h1>
-        </div>
+      {actionError && <Alert tone="danger" onClose={() => setActionError(null)}>{actionError}</Alert>}
 
-        <div style={styles.metaGrid}>
-          <div style={styles.metaItem}>
-            <span style={styles.metaLabel}>Tipo</span>
-            <span style={styles.metaValue}>{typeLabels[ticket.tipo] || ticket.tipo}</span>
-          </div>
-          <div style={styles.metaItem}>
-            <span style={styles.metaLabel}>Creado por</span>
-            <span style={styles.metaValue}>{ticket.creado_por || 'N/A'}</span>
-          </div>
-          <div style={styles.metaItem}>
-            <span style={styles.metaLabel}>Fecha</span>
-            <span style={styles.metaValue}>{ticket.fecha_creacion}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Status actions */}
-      {ticket.estado === 'resuelto' && (
-        <button style={{ ...styles.actionBtn, background: '#6b7280' }} onClick={() => handleStatusChange('cerrado')}>
-          Cerrar ticket
-        </button>
-      )}
-      {ticket.estado === 'cerrado' && (
-        <button style={{ ...styles.actionBtn, background: '#2563eb' }} onClick={() => handleStatusChange('nuevo')}>
-          Reabrir ticket
-        </button>
-      )}
-
-      {/* Descripción */}
-      <div style={styles.section}>
-        <h3 style={styles.sectionTitle}>Descripción</h3>
-        <div style={styles.description}>{ticket.descripcion || 'Sin descripción'}</div>
-      </div>
-
-      {/* Comentarios */}
-      <div style={styles.section}>
-        <h3 style={styles.sectionTitle}>Comentarios ({publicComments.length})</h3>
-
-        {publicComments.length === 0 && (
-          <div style={styles.emptyComments}>No hay comentarios aún</div>
-        )}
-
-        <div style={styles.commentsList}>
-          {publicComments.map((c, i) => (
-            <div key={i} style={styles.comment}>
-              <div style={styles.commentHeader}>
-                <span style={styles.commentAuthor}>{c.autor || 'Usuario'}</span>
-                <span style={styles.commentDate}>{c.fecha}</span>
-              </div>
-              <div style={styles.commentText}>{c.texto}</div>
+      <div className="trn-grid trn-grid--sidebar">
+        <div className="trn-stack">
+          <Card>
+            <p className="trn-eyebrow trn-mono" style={{ letterSpacing: '0.08em' }}>{ticket.folio}</p>
+            <h1 style={{ fontSize: 20, fontWeight: 620, letterSpacing: '-0.02em', margin: '0 0 12px' }}>{ticket.title}</h1>
+            <div className="trn-row">
+              <Badge tone={status.tone} dot>{status.label}</Badge>
+              <Badge tone={priority.tone}>Prioridad {priority.label.toLowerCase()}</Badge>
+              <Badge tone="neutral">{type.label}</Badge>
             </div>
-          ))}
+            <hr className="trn-divider" style={{ margin: '16px 0' }} />
+            <div className="trn-prose">{ticket.description || 'Sin descripción.'}</div>
+          </Card>
+
+          <Card title={`Conversación (${comments.length})`} flush>
+            {comments.length === 0 ? (
+              <EmptyState
+                icon={<IconMessage size={20} />}
+                title="Sin mensajes todavía"
+                description="Escribe abajo para dar contexto adicional a nuestro equipo."
+              />
+            ) : (
+              <div className="trn-thread">
+                {comments.map((c) => (
+                  <article key={c.id} className="trn-msg">
+                    <div className="trn-msg__head">
+                      <span className="trn-msg__who">
+                        <span className="trn-avatar trn-avatar--light" style={{ width: 26, height: 26, fontSize: 10.5 }}>
+                          {initials(c.users?.full_name)}
+                        </span>
+                        {c.users?.full_name || 'Equipo TORREN'}
+                      </span>
+                      <time className="trn-msg__when">{formatDateTime(c.created_at)}</time>
+                    </div>
+                    <div className="trn-msg__body">{c.body}</div>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            <form onSubmit={handleAddComment} style={{ padding: 16, borderTop: '1px solid var(--trn-line)', background: 'var(--trn-surface-2)' }}>
+              <Textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Escribe un mensaje para el equipo…"
+                rows={3}
+                aria-label="Nuevo comentario"
+              />
+              <div className="trn-row" style={{ justifyContent: 'flex-end', marginTop: 10 }}>
+                <Button type="submit" variant="primary" disabled={submitting || !comment.trim()}>
+                  <IconSend size={14} color="currentColor" />
+                  {submitting ? 'Enviando…' : 'Enviar mensaje'}
+                </Button>
+              </div>
+            </form>
+          </Card>
         </div>
 
-        {/* Formulario de comentario */}
-        <form onSubmit={handleAddComment} style={styles.commentForm}>
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="Escribe un comentario..."
-            style={styles.textarea}
-            rows={3}
-          />
-          <button
-            type="submit"
-            disabled={submitting || !comment.trim()}
-            style={{
-              ...styles.submitBtn,
-              opacity: submitting || !comment.trim() ? 0.5 : 1,
-            }}
-          >
-            {submitting ? 'Enviando...' : 'Enviar comentario'}
-          </button>
-        </form>
+        <div className="trn-stack">
+          <Card title="Detalles">
+            <DefinitionList
+              items={[
+                { label: 'Tipo', value: type.label },
+                { label: 'Creado por', value: ticket.creatorName },
+                { label: 'Asignado a', value: ticket.assigneeName || 'Pendiente de asignar' },
+                { label: 'Fecha de creación', value: formatDateTime(ticket.created_at) },
+                { label: 'Resuelto', value: ticket.resolved_at ? formatDateTime(ticket.resolved_at) : 'En curso' },
+              ]}
+            />
+          </Card>
+
+          {(ticket.status === 'resuelto' || ticket.status === 'cerrado') && (
+            <Card title="Acciones">
+              {ticket.status === 'resuelto' && (
+                <>
+                  <p className="trn-muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+                    Si la solución te funciona, cierra el ticket. Si no, puedes seguir comentando.
+                  </p>
+                  <Button variant="primary" block onClick={() => handleStatusChange('cerrado')}>Cerrar ticket</Button>
+                </>
+              )}
+              {ticket.status === 'cerrado' && (
+                <>
+                  <p className="trn-muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+                    Este ticket está cerrado. Puedes reabrirlo si el problema volvió a presentarse.
+                  </p>
+                  <Button variant="secondary" block onClick={() => handleStatusChange('nuevo')}>Reabrir ticket</Button>
+                </>
+              )}
+            </Card>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
-
-const styles = {
-  page: { maxWidth: 800, margin: '0 auto' },
-  backBtn: {
-    background: 'none',
-    border: 'none',
-    color: '#2563eb',
-    fontSize: 14,
-    fontWeight: 500,
-    cursor: 'pointer',
-    padding: 0,
-    marginBottom: 20,
-  },
-  header: {
-    background: '#fff',
-    borderRadius: 12,
-    border: '1px solid #e5e7eb',
-    padding: 24,
-    marginBottom: 20,
-  },
-  folioRow: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 },
-  folio: { fontSize: 14, fontWeight: 600, color: '#6b7280' },
-  badge: {
-    fontSize: 12,
-    fontWeight: 600,
-    padding: '3px 10px',
-    borderRadius: 12,
-  },
-  title: { fontSize: 22, fontWeight: 700, color: '#111827', margin: '0 0 16px' },
-  metaGrid: { display: 'flex', gap: 32, flexWrap: 'wrap' },
-  metaItem: { display: 'flex', flexDirection: 'column', gap: 2 },
-  metaLabel: { fontSize: 12, color: '#9ca3af', fontWeight: 500 },
-  metaValue: { fontSize: 14, color: '#374151', fontWeight: 500 },
-  actionBtn: {
-    color: '#fff',
-    padding: '10px 20px',
-    borderRadius: 8,
-    border: 'none',
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: 'pointer',
-    marginBottom: 20,
-  },
-  section: {
-    background: '#fff',
-    borderRadius: 12,
-    border: '1px solid #e5e7eb',
-    padding: 24,
-    marginBottom: 20,
-  },
-  sectionTitle: { fontSize: 16, fontWeight: 600, color: '#111827', margin: '0 0 16px' },
-  description: { fontSize: 15, color: '#374151', lineHeight: 1.6, whiteSpace: 'pre-wrap' },
-  emptyComments: { textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: '16px 0' },
-  commentsList: { display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 },
-  comment: {
-    background: '#f9fafb',
-    borderRadius: 8,
-    padding: 16,
-    border: '1px solid #f3f4f6',
-  },
-  commentHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: 8 },
-  commentAuthor: { fontSize: 14, fontWeight: 600, color: '#374151' },
-  commentDate: { fontSize: 13, color: '#9ca3af' },
-  commentText: { fontSize: 14, color: '#374151', lineHeight: 1.5 },
-  commentForm: { display: 'flex', flexDirection: 'column', gap: 12 },
-  textarea: {
-    padding: '10px 14px',
-    borderRadius: 8,
-    border: '1px solid #d1d5db',
-    fontSize: 14,
-    fontFamily: 'inherit',
-    resize: 'vertical',
-    outline: 'none',
-    lineHeight: 1.5,
-  },
-  submitBtn: {
-    alignSelf: 'flex-end',
-    background: '#2563eb',
-    color: '#fff',
-    padding: '10px 20px',
-    borderRadius: 8,
-    border: 'none',
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  empty: { padding: 40, textAlign: 'center', color: '#9ca3af', fontSize: 14 },
-};

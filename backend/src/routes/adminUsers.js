@@ -5,6 +5,13 @@ import { requireRole } from '../middleware/auth.js';
 const router = Router();
 router.use(requireRole('admin'));
 
+/** Only client_user rows carry a client_id; '' from a <select> must become NULL. */
+function resolveClientId(role, clientId) {
+  if (role !== 'client_user') return null;
+  const parsed = parseInt(clientId, 10);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
 // GET /api/admin/users
 router.get('/', async (req, res) => {
   try {
@@ -82,7 +89,7 @@ router.post('/', async (req, res) => {
         email,
         full_name: fullName,
         role,
-        client_id: role === 'client_user' ? clientId : null,
+        client_id: resolveClientId(role, clientId),
         active: active !== undefined ? active : true,
       })
       .select()
@@ -116,7 +123,7 @@ router.put('/:id', async (req, res) => {
     if (fullName) updates.full_name = fullName;
     if (role) {
       updates.role = role;
-      updates.client_id = role === 'client_user' ? clientId : null;
+      updates.client_id = resolveClientId(role, clientId);
     }
     if (active !== undefined) updates.active = active;
 

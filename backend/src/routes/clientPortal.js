@@ -102,9 +102,11 @@ router.get('/tickets/:id', async (req, res) => {
     const db = createAdminClient();
     const clientId = getClientId(req);
 
+    // Both embeds point at `users`, so they must be aliased or PostgREST
+    // collapses them into a single ambiguous `users` key.
     const { data: ticket, error } = await db
       .from('tickets')
-      .select('*, users!tickets_created_by_fkey(full_name), users!tickets_assigned_to_fkey(full_name)')
+      .select('*, creator:users!tickets_created_by_fkey(full_name), assignee:users!tickets_assigned_to_fkey(full_name)')
       .eq('id', req.params.id)
       .eq('client_id', clientId)
       .limit(1)
@@ -122,8 +124,8 @@ router.get('/tickets/:id', async (req, res) => {
 
     res.json({
       ...ticket,
-      creatorName: ticket.users?.full_name,
-      assigneeName: ticket.users?.full_name,
+      creatorName: ticket.creator?.full_name || null,
+      assigneeName: ticket.assignee?.full_name || null,
       comments: comments || [],
     });
   } catch (err) {
@@ -250,15 +252,16 @@ router.put('/tickets/:id/status', async (req, res) => {
 
     if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' });
 
-    // Client can only: resuelto -> cerrado
-    if (status === 'cerrado' && ticket.status !== 'resuelto') {
-      return res.status(400).json({ error: 'Solo puedes cerrar tickets resueltos' });
+    // A client may only close a resolved ticket, or reopen a resolved/closed one.
+    const CLOSE = status === 'cerrado' && ticket.status === 'resuelto';
+    const REOPEN = status === 'nuevo' && ['resuelto', 'cerrado'].includes(ticket.status);
+
+    if (!CLOSE && !REOPEN) {
+      return res.status(400).json({ error: 'Solo puedes cerrar tickets resueltos o reabrir tickets cerrados' });
     }
 
     const updates = { status };
-    if (status === 'cerrado') {
-      updates.resolved_at = new Date().toISOString();
-    }
+    updates.resolved_at = CLOSE ? new Date().toISOString() : null;
 
     const { data, error } = await db
       .from('tickets')

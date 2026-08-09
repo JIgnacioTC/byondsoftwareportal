@@ -1,189 +1,169 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
+import {
+  Alert, Badge, Button, Card, Field, Input, Loading, PageHeader, Stat, Table, TableEmpty,
+} from '../../components/ui';
+import {
+  TICKET_PRIORITY, TICKET_STATUS, TICKET_TYPE,
+  describe, formatHours, formatPeriod,
+} from '../../lib/domain';
 
-const typeLabels = {
-  soporte: 'Soporte',
-  bug: 'Bug',
-  nuevo_desarrollo: 'Nuevo Desarrollo',
-  actualizacion: 'Actualización',
-};
+/** Ledger rows arrive one per (client, period, type); pivot them per client. */
+function pivotByClient(rows) {
+  const map = new Map();
+  for (const row of rows) {
+    const key = `${row.clientId}-${row.period}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        clientId: row.clientId,
+        clientName: row.clientName,
+        period: row.period,
+        allocation: 0,
+        consumption: 0,
+        adjustment: 0,
+        rollover: 0,
+      });
+    }
+    const bucket = map.get(key);
+    if (row.type in bucket) bucket[row.type] += Number(row.totalHours) || 0;
+  }
+  return [...map.values()]
+    .map((r) => ({ ...r, balance: r.allocation + r.consumption + r.adjustment + r.rollover }))
+    .sort((a, b) => b.period.localeCompare(a.period) || (a.clientName || '').localeCompare(b.clientName || ''));
+}
 
-const statusLabels = {
-  nuevo: 'Nuevo',
-  en_analisis: 'En Análisis',
-  en_progreso: 'En Progreso',
-  esperando_cliente: 'Esperando Cliente',
-  resuelto: 'Resuelto',
-  cerrado: 'Cerrado',
-};
-
-const priorityLabels = {
-  baja: 'Baja',
-  media: 'Media',
-  alta: 'Alta',
-  critica: 'Crítica',
-};
-
-const typeColors = {
-  soporte: '#3b82f6',
-  bug: '#ef4444',
-  nuevo_desarrollo: '#10b981',
-  actualizacion: '#8b5cf6',
-};
-
-const statusColors = {
-  nuevo: '#3b82f6',
-  en_analisis: '#f59e0b',
-  en_progreso: '#f97316',
-  esperando_cliente: '#a855f7',
-  resuelto: '#10b981',
-  cerrado: '#6b7280',
-};
-
-const priorityColors = {
-  baja: '#6b7280',
-  media: '#3b82f6',
-  alta: '#f97316',
-  critica: '#ef4444',
-};
+function Distribution({ title, rows, map, keyField }) {
+  const total = rows.reduce((s, r) => s + Number(r.count || 0), 0);
+  return (
+    <Card title={title} subtitle={`${total} en total`}>
+      {rows.length === 0 ? (
+        <p className="trn-muted" style={{ fontSize: 13.5 }}>Sin datos.</p>
+      ) : (
+        <div className="trn-stack" style={{ gap: 12 }}>
+          {rows
+            .slice()
+            .sort((a, b) => b.count - a.count)
+            .map((row) => {
+              const meta = describe(map, row[keyField]);
+              const pct = total > 0 ? Math.round((row.count / total) * 100) : 0;
+              return (
+                <div key={row[keyField]}>
+                  <div className="trn-row" style={{ justifyContent: 'space-between', marginBottom: 5 }}>
+                    <Badge tone={meta.tone} dot>{meta.label}</Badge>
+                    <span className="trn-num" style={{ fontWeight: 600 }}>
+                      {row.count} <span className="trn-muted" style={{ fontWeight: 400 }}>· {pct}%</span>
+                    </span>
+                  </div>
+                  <div className="trn-meter"><div className="trn-meter__fill" style={{ width: `${pct}%` }} /></div>
+                </div>
+              );
+            })}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 export default function AdminReports() {
-  const [hoursData, setHoursData] = useState([]);
-  const [ticketData, setTicketData] = useState(null);
+  const [hoursRows, setHoursRows] = useState([]);
+  const [ticketStats, setTicketStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [filterPeriod, setFilterPeriod] = useState('');
+  const [error, setError] = useState(null);
+  const [period, setPeriod] = useState('');
 
-  useEffect(() => {
-    loadData();
-  }, [filterPeriod]);
-
-  async function loadData() {
+  const load = useCallback(async (selectedPeriod) => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      const params = {};
-      if (filterPeriod) params.period = filterPeriod;
       const [hours, tickets] = await Promise.all([
-        api.getHoursReport(params),
+        api.getHoursReport(selectedPeriod ? { period: selectedPeriod } : {}),
         api.getTicketReports(),
       ]);
-      setHoursData(hours);
-      setTicketData(tickets);
+      setHoursRows(Array.isArray(hours) ? hours : []);
+      setTicketStats(tickets);
     } catch (err) {
-      console.error('Error loading reports:', err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  if (loading) return <p style={{ color: '#6b7280' }}>Cargando reportes...</p>;
+  useEffect(() => { load(period); }, [load, period]);
+
+  const pivoted = useMemo(() => pivotByClient(hoursRows), [hoursRows]);
+  const totals = useMemo(() => ({
+    allocated: pivoted.reduce((s, r) => s + r.allocation, 0),
+    consumed: pivoted.reduce((s, r) => s + Math.abs(r.consumption), 0),
+    balance: pivoted.reduce((s, r) => s + r.balance, 0),
+    overdrawn: pivoted.filter((r) => r.balance < 0).length,
+  }), [pivoted]);
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Reportes</h2>
-        <input
-          type="month"
-          value={filterPeriod}
-          onChange={(e) => setFilterPeriod(e.target.value)}
-          style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 }}
-        />
-      </div>
+    <>
+      <PageHeader
+        title="Reportes"
+        description="Consumo de horas por cuenta y distribución de la carga de tickets."
+        actions={
+          <div className="trn-row" style={{ alignItems: 'flex-end' }}>
+            <Field label="Periodo" htmlFor="period">
+              <Input id="period" type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ width: 165 }} />
+            </Field>
+            {period && <Button variant="ghost" onClick={() => setPeriod('')}>Ver todo</Button>}
+          </div>
+        }
+      />
 
-      {/* Hours Report */}
-      <div style={{ background: '#fff', borderRadius: 14, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.1)', marginBottom: 24 }}>
-        <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600 }}>Consumo de Horas por Cliente</h3>
-        {hoursData.length === 0 ? (
-          <p style={{ color: '#6b7280', margin: 0 }}>No hay datos para el período seleccionado.</p>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc' }}>
-                  <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 13, fontWeight: 600, color: '#64748b' }}>Cliente</th>
-                  <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 13, fontWeight: 600, color: '#64748b' }}>Período</th>
-                  <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 13, fontWeight: 600, color: '#64748b' }}>Tipo</th>
-                  <th style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#64748b' }}>Horas</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hoursData.map((row, i) => (
-                  <tr key={i} style={{ borderTop: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '10px 14px', fontSize: 14, fontWeight: 500 }}>{row.clientName}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 14, color: '#6b7280' }}>{row.period}</td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: 12,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        background: row.type === 'consumption' ? '#fee2e2' : row.type === 'allocation' ? '#dcfce7' : '#ede9fe',
-                        color: row.type === 'consumption' ? '#991b1b' : row.type === 'allocation' ? '#166534' : '#5b21b6',
-                      }}>
-                        {row.type === 'allocation' ? 'Asignación' : row.type === 'consumption' ? 'Consumo' : 'Ajuste'}
-                      </span>
-                    </td>
-                    <td style={{
-                      padding: '10px 14px',
-                      textAlign: 'right',
-                      fontWeight: 600,
-                      color: Number(row.totalHours) >= 0 ? '#10b981' : '#ef4444',
-                    }}>
-                      {Number(row.totalHours).toFixed(1)}h
-                    </td>
+      {error && <Alert tone="danger" title="No se pudieron cargar los reportes">{error}</Alert>}
+
+      {loading ? (
+        <Loading label="Calculando reportes…" />
+      ) : (
+        <>
+          <div className="trn-stats" style={{ marginBottom: 20 }}>
+            <Stat label="Horas asignadas" value={formatHours(totals.allocated)} hint={period ? formatPeriod(period) : 'Histórico completo'} />
+            <Stat label="Horas consumidas" value={formatHours(totals.consumed)} />
+            <Stat label="Saldo agregado" value={formatHours(totals.balance, { signed: true })} tone={totals.balance < 0 ? 'danger' : 'success'} />
+            <Stat label="Cuentas en excedente" value={totals.overdrawn} tone={totals.overdrawn > 0 ? 'warn' : undefined} />
+          </div>
+
+          <Card title="Horas por cliente" subtitle={period ? formatPeriod(period) : 'Todos los periodos'} flush style={{ marginBottom: 16 }}>
+            <Table
+              columns={[
+                { key: 'client', label: 'Cliente' },
+                { key: 'period', label: 'Periodo', width: 150 },
+                { key: 'alloc', label: 'Asignadas', align: 'right', width: 120 },
+                { key: 'cons', label: 'Consumidas', align: 'right', width: 120 },
+                { key: 'adj', label: 'Ajustes', align: 'right', width: 110 },
+                { key: 'balance', label: 'Saldo', align: 'right', width: 120 },
+              ]}
+            >
+              {pivoted.length === 0 ? (
+                <TableEmpty colSpan={6}>Sin movimientos en el periodo seleccionado</TableEmpty>
+              ) : (
+                pivoted.map((row) => (
+                  <tr key={row.key}>
+                    <td className="t-strong">{row.clientName || `Cliente #${row.clientId}`}</td>
+                    <td className="trn-muted">{formatPeriod(row.period)}</td>
+                    <td className="num trn-muted">{formatHours(row.allocation)}</td>
+                    <td className="num trn-muted">{formatHours(Math.abs(row.consumption))}</td>
+                    <td className="num trn-muted">{row.adjustment ? formatHours(row.adjustment, { signed: true }) : '—'}</td>
+                    <td className={`num ${row.balance < 0 ? 'trn-neg' : 'trn-pos'}`}>{formatHours(row.balance, { signed: true })}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                ))
+              )}
+            </Table>
+          </Card>
 
-      {/* Ticket Reports */}
-      {ticketData && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24 }}>
-          {/* By Status */}
-          <div style={{ background: '#fff', borderRadius: 14, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-            <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600 }}>Tickets por Estado</h3>
-            {ticketData.byStatus.map((item) => (
-              <div key={item.status} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: statusColors[item.status] || '#6b7280' }} />
-                  <span style={{ fontSize: 14 }}>{statusLabels[item.status] || item.status}</span>
-                </span>
-                <span style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{item.count}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* By Type */}
-          <div style={{ background: '#fff', borderRadius: 14, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-            <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600 }}>Tickets por Tipo</h3>
-            {ticketData.byType.map((item) => (
-              <div key={item.type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: typeColors[item.type] || '#6b7280' }} />
-                  <span style={{ fontSize: 14 }}>{typeLabels[item.type] || item.type}</span>
-                </span>
-                <span style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{item.count}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* By Priority */}
-          <div style={{ background: '#fff', borderRadius: 14, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-            <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600 }}>Tickets por Prioridad</h3>
-            {ticketData.byPriority.map((item) => (
-              <div key={item.priority} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: priorityColors[item.priority] || '#6b7280' }} />
-                  <span style={{ fontSize: 14 }}>{priorityLabels[item.priority] || item.priority}</span>
-                </span>
-                <span style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{item.count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+          {ticketStats && (
+            <div className="trn-grid trn-grid--3">
+              <Distribution title="Tickets por estado" rows={ticketStats.byStatus || []} map={TICKET_STATUS} keyField="status" />
+              <Distribution title="Tickets por tipo" rows={ticketStats.byType || []} map={TICKET_TYPE} keyField="type" />
+              <Distribution title="Tickets por prioridad" rows={ticketStats.byPriority || []} map={TICKET_PRIORITY} keyField="priority" />
+            </div>
+          )}
+        </>
       )}
-    </div>
+    </>
   );
 }

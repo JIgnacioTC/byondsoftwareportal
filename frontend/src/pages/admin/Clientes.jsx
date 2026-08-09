@@ -1,433 +1,345 @@
-import React, { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import {
+  Alert, Badge, Button, Card, Field, Input, Loading, Modal, PageHeader,
+  Select, Stat, Table, TableEmpty,
+} from '../../components/ui';
+import {
+  CLIENT_STATUS, LEDGER_TYPE, SUBSCRIPTION_STATUS,
+  describe, formatDate, formatHours, optionsOf,
+} from '../../lib/domain';
+import { IconPlus, IconSearch } from '../../components/Icons';
 
-const statusColors = {
-  activo: { bg: '#dcfce7', text: '#166534' },
-  prospecto: { bg: '#dbeafe', text: '#1e40af' },
-  suspendido: { bg: '#fef3c7', text: '#92400e' },
-  inactivo: { bg: '#f3f4f6', text: '#6b7280' },
-};
+const EMPTY_CLIENT = { companyName: '', contactName: '', status: 'prospecto' };
+const EMPTY_ADJUSTMENT = { hours: '', description: '' };
 
-const emptyClient = { companyName: '', contactName: '', status: 'prospecto' };
+/** A client's live subscription, preferring an active one over a requested one. */
+function activeSubscription(client) {
+  const subs = client.subscriptions || [];
+  return subs.find((s) => s.status === 'activa') || subs[0] || null;
+}
 
 export default function Clientes() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editingClient, setEditingClient] = useState(null);
-  const [form, setForm] = useState(emptyClient);
-  const [detailClient, setDetailClient] = useState(null);
-  const [ledger, setLedger] = useState(null);
-  const [adjustment, setAdjustment] = useState({ hours: '', description: '' });
+  const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [search, setSearch] = useState('');
+
+  const [editor, setEditor] = useState(null); // { client|null, form }
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { loadClients(); }, []);
+  const [detail, setDetail] = useState(null);
+  const [ledger, setLedger] = useState({ status: 'idle', rows: [], error: null });
+  const [adjustment, setAdjustment] = useState(EMPTY_ADJUSTMENT);
 
-  const loadClients = async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
       const data = await api.getClients();
-      setClients(Array.isArray(data) ? data : data.clients || []);
+      setClients(Array.isArray(data) ? data : []);
     } catch (err) {
-      alert('Error al cargar clientes: ' + (err.message || ''));
+      setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleSave = async () => {
-    try {
-      setSaving(true);
-      if (editingClient) {
-        await api.updateClient(editingClient.id, form);
-      } else {
-        await api.createClient(form);
-      }
-      setShowForm(false);
-      setEditingClient(null);
-      setForm(emptyClient);
-      loadClients();
-    } catch (err) {
-      alert('Error al guardar: ' + (err.message || ''));
-    } finally {
-      setSaving(false);
-    }
-  };
+  useEffect(() => { load(); }, [load]);
 
-  const handleEdit = (client) => {
-    setEditingClient(client);
-    setForm({
+  const openCreate = () => setEditor({ client: null, form: EMPTY_CLIENT });
+  const openEdit = (client) => setEditor({
+    client,
+    form: {
       companyName: client.company_name || '',
       contactName: client.contact_name || '',
       status: client.status || 'prospecto',
-    });
-    setShowForm(true);
-  };
+    },
+  });
 
-  const handleActivate = async (clientId) => {
-    if (!confirm('¿Activar suscripción para este cliente?')) return;
-    try {
-      await api.activateSubscription(clientId);
-      loadClients();
-    } catch (err) {
-      alert('Error al activar: ' + (err.message || ''));
-    }
-  };
-
-  const handleViewDetail = async (client) => {
-    setDetailClient(client);
-    setLedger(null);
-    try {
-      const data = await api.getClientLedger(client.id);
-      setLedger(data);
-    } catch (err) {
-      setLedger({ error: err.message || 'Error al cargar' });
-    }
-  };
-
-  const handleAdjustment = async () => {
-    if (!adjustment.description.trim()) {
-      alert('La descripción es obligatoria');
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const { client, form } = editor;
+    if (!form.companyName.trim() || !form.contactName.trim()) {
+      setNotice({ tone: 'warn', text: 'Empresa y contacto son obligatorios.' });
       return;
     }
-    if (!adjustment.hours || isNaN(parseFloat(adjustment.hours))) {
-      alert('Las horas deben ser un número válido');
-      return;
-    }
+    setSaving(true);
+    setNotice(null);
     try {
-      setSaving(true);
-      await api.createAdjustment(detailClient.id, {
-        hours: parseFloat(adjustment.hours),
-        description: adjustment.description,
-      });
-      setAdjustment({ hours: '', description: '' });
-      const data = await api.getClientLedger(detailClient.id);
-      setLedger(data);
+      if (client) await api.updateClient(client.id, form);
+      else await api.createClient(form);
+      setEditor(null);
+      setNotice({ tone: 'success', text: client ? 'Cliente actualizado.' : 'Cliente creado.' });
+      await load();
     } catch (err) {
-      alert('Error al registrar ajuste: ' + (err.message || ''));
+      setNotice({ tone: 'danger', text: err.message });
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>Cargando clientes...</div>;
+  const handleActivate = async (client) => {
+    if (!window.confirm(`¿Activar la suscripción pendiente de ${client.company_name}? Se asignarán las horas del plan para el periodo en curso.`)) return;
+    setNotice(null);
+    try {
+      await api.activateSubscription(client.id);
+      setNotice({ tone: 'success', text: `Suscripción de ${client.company_name} activada.` });
+      await load();
+    } catch (err) {
+      setNotice({ tone: 'danger', text: err.message });
+    }
+  };
+
+  const loadLedger = useCallback(async (clientId) => {
+    setLedger({ status: 'loading', rows: [], error: null });
+    try {
+      const rows = await api.getAdminClientLedger(clientId);
+      setLedger({ status: 'ready', rows: Array.isArray(rows) ? rows : [], error: null });
+    } catch (err) {
+      setLedger({ status: 'error', rows: [], error: err.message });
+    }
+  }, []);
+
+  const openDetail = (client) => {
+    setDetail(client);
+    setAdjustment(EMPTY_ADJUSTMENT);
+    loadLedger(client.id);
+  };
+
+  const handleAdjustment = async (e) => {
+    e.preventDefault();
+    const hours = parseFloat(adjustment.hours);
+    if (!Number.isFinite(hours) || hours === 0) {
+      setNotice({ tone: 'warn', text: 'Indica un número de horas distinto de cero (usa negativo para descontar).' });
+      return;
+    }
+    if (!adjustment.description.trim()) {
+      setNotice({ tone: 'warn', text: 'El motivo del ajuste es obligatorio.' });
+      return;
+    }
+    setSaving(true);
+    setNotice(null);
+    try {
+      await api.createAdjustment(detail.id, { hours, description: adjustment.description.trim() });
+      setAdjustment(EMPTY_ADJUSTMENT);
+      await loadLedger(detail.id);
+      setNotice({ tone: 'success', text: 'Ajuste registrado.' });
+    } catch (err) {
+      setNotice({ tone: 'danger', text: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const term = search.trim().toLowerCase();
+  const visible = term
+    ? clients.filter((c) =>
+      [c.company_name, c.contact_name, c.client_number].some((v) => (v || '').toLowerCase().includes(term)))
+    : clients;
+
+  const ledgerBalance = ledger.rows.reduce((s, r) => s + (Number(r.hours) || 0), 0);
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#111' }}>Clientes</h1>
-        <button
-          onClick={() => { setShowForm(true); setEditingClient(null); setForm(emptyClient); }}
-          style={{
-            padding: '10px 20px',
-            background: '#2563eb',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 8,
-            cursor: 'pointer',
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          + Nuevo Cliente
-        </button>
+    <>
+      <PageHeader
+        title="Clientes"
+        description="Cuentas registradas, su plan vigente y el saldo de horas."
+        actions={<Button variant="primary" onClick={openCreate}><IconPlus size={15} color="currentColor" />Nuevo cliente</Button>}
+      />
+
+      {notice && <Alert tone={notice.tone} onClose={() => setNotice(null)}>{notice.text}</Alert>}
+      {error && <Alert tone="danger" title="No se pudieron cargar los clientes">{error}</Alert>}
+
+      <div className="trn-toolbar">
+        <Field label="Buscar" className="trn-field--grow">
+          <div className="trn-search">
+            <IconSearch size={15} color="var(--trn-ink-4)" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Empresa, contacto o número de cliente…" />
+          </div>
+        </Field>
       </div>
 
-      {showForm && (
-        <div style={{
-          background: '#fff',
-          borderRadius: 12,
-          border: '1px solid #e5e7eb',
-          padding: 24,
-          marginBottom: 24,
-        }}>
-          <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600 }}>
-            {editingClient ? 'Editar Cliente' : 'Nuevo Cliente'}
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 16, alignItems: 'end' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Nombre de empresa</label>
-              <input
-                value={form.companyName}
-                onChange={(e) => setForm({ ...form, companyName: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14 }}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Nombre de contacto</label>
-              <input
-                value={form.contactName}
-                onChange={(e) => setForm({ ...form, contactName: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14 }}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Estado</label>
-              <select
-                value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14 }}
-              >
-                <option value="prospecto">Prospecto</option>
-                <option value="activo">Activo</option>
-                <option value="suspendido">Suspendido</option>
-                <option value="inactivo">Inactivo</option>
-              </select>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                style={{
-                  padding: '8px 20px',
-                  background: '#2563eb',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 6,
-                  cursor: saving ? 'not-allowed' : 'pointer',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  opacity: saving ? 0.6 : 1,
-                }}
-              >
-                {saving ? 'Guardando...' : 'Guardar'}
-              </button>
-              <button
-                onClick={() => { setShowForm(false); setEditingClient(null); }}
-                style={{
-                  padding: '8px 20px',
-                  background: '#f3f4f6',
-                  color: '#374151',
-                  border: '1px solid #d1d5db',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: 500,
-                }}
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', marginBottom: 24 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: '#f9fafb' }}>
-              <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Empresa</th>
-              <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Núm. Cliente</th>
-              <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Estado</th>
-              <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Plan</th>
-              <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map((client) => {
-              const sc = statusColors[client.status] || statusColors.inactivo;
-              return (
-                <tr key={client.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                  <td style={{ padding: '12px 20px', fontSize: 14, fontWeight: 500, color: '#111' }}>{client.company_name}</td>
-                  <td style={{ padding: '12px 20px', fontSize: 13, color: '#6b7280' }}>{client.client_number || '—'}</td>
-                  <td style={{ padding: '12px 20px' }}>
-                    <span style={{
-                      padding: '3px 10px',
-                      borderRadius: 12,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      background: sc.bg,
-                      color: sc.text,
-                      textTransform: 'capitalize',
-                    }}>
-                      {client.status}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 20px', fontSize: 13, color: '#374151' }}>{client.subscriptions?.[0]?.plans?.name || '—'}</td>
-                  <td style={{ padding: '12px 20px' }}>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        onClick={() => handleEdit(client)}
-                        style={{
-                          padding: '5px 12px',
-                          background: '#f3f4f6',
-                          border: '1px solid #d1d5db',
-                          borderRadius: 4,
-                          cursor: 'pointer',
-                          fontSize: 12,
-                          color: '#374151',
-                        }}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleViewDetail(client)}
-                        style={{
-                          padding: '5px 12px',
-                          background: '#eff6ff',
-                          border: '1px solid #bfdbfe',
-                          borderRadius: 4,
-                          cursor: 'pointer',
-                          fontSize: 12,
-                          color: '#1d4ed8',
-                        }}
-                      >
-                        Detalle
-                      </button>
-                      {client.status === 'prospecto' && (
-                        <button
-                          onClick={() => handleActivate(client.id)}
-                          style={{
-                            padding: '5px 12px',
-                            background: '#dcfce7',
-                            border: '1px solid #86efac',
-                            borderRadius: 4,
-                            cursor: 'pointer',
-                            fontSize: 12,
-                            color: '#166534',
-                            fontWeight: 600,
-                          }}
-                        >
-                          Activar
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {detailClient && (
-        <div style={{
-          background: '#fff',
-          borderRadius: 12,
-          border: '1px solid #e5e7eb',
-          overflow: 'hidden',
-        }}>
-          <div style={{
-            padding: '16px 20px',
-            borderBottom: '1px solid #e5e7eb',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
-              Detalle: {detailClient.company_name}
-            </h3>
-            <button
-              onClick={() => { setDetailClient(null); setLedger(null); }}
-              style={{
-                padding: '5px 12px',
-                background: '#f3f4f6',
-                border: '1px solid #d1d5db',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontSize: 12,
-              }}
-            >
-              Cerrar
-            </button>
-          </div>
-
-          <div style={{ padding: 20 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 24 }}>
-              <div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>Contacto</div>
-                <div style={{ fontSize: 14, fontWeight: 500 }}>{detailClient.contact_name || '—'}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>Plan actual</div>
-                <div style={{ fontSize: 14, fontWeight: 500 }}>{detailClient.subscriptions?.[0]?.plans?.name || '—'}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>Estado</div>
-                <div style={{ fontSize: 14, fontWeight: 500, textTransform: 'capitalize' }}>{detailClient.status}</div>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 24 }}>
-              <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600 }}>Ajuste manual de horas</h4>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'end' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, color: '#374151', marginBottom: 4 }}>Horas</label>
-                  <input
-                    type="number"
-                    step="0.25"
-                    value={adjustment.hours}
-                    onChange={(e) => setAdjustment({ ...adjustment, hours: e.target.value })}
-                    style={{ width: 100, padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14 }}
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: 12, color: '#374151', marginBottom: 4 }}>Descripción *</label>
-                  <input
-                    value={adjustment.description}
-                    onChange={(e) => setAdjustment({ ...adjustment, description: e.target.value })}
-                    placeholder="Motivo del ajuste"
-                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14 }}
-                  />
-                </div>
-                <button
-                  onClick={handleAdjustment}
-                  disabled={saving}
-                  style={{
-                    padding: '8px 20px',
-                    background: '#2563eb',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 6,
-                    cursor: saving ? 'not-allowed' : 'pointer',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    opacity: saving ? 0.6 : 1,
-                  }}
-                >
-                  Registrar
-                </button>
-              </div>
-            </div>
-
-            <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600 }}>Libro mayor</h4>
-            {ledger?.error ? (
-              <div style={{ color: '#dc2626', fontSize: 13 }}>{ledger.error}</div>
-            ) : Array.isArray(ledger) && ledger.length > 0 ? (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: '#f9fafb' }}>
-                    <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Fecha</th>
-                    <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Tipo</th>
-                    <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Descripción</th>
-                    <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Horas</th>
-                    <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Balance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(Array.isArray(ledger) ? ledger : []).map((entry, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                      <td style={{ padding: '10px 16px', fontSize: 13 }}>{entry.created_at ? new Date(entry.created_at).toLocaleDateString('es-MX') : '—'}</td>
-                      <td style={{ padding: '10px 16px', fontSize: 13, textTransform: 'capitalize' }}>{entry.type || '—'}</td>
-                      <td style={{ padding: '10px 16px', fontSize: 13 }}>{entry.description || '—'}</td>
-                      <td style={{ padding: '10px 16px', textAlign: 'right', fontSize: 13, color: entry.hours < 0 ? '#dc2626' : '#16a34a' }}>
-                        {entry.hours > 0 ? '+' : ''}{Number(entry.hours).toFixed(2)}
-                      </td>
-                      <td style={{ padding: '10px 16px', textAlign: 'right', fontSize: 13, fontWeight: 500 }}>
-                        {Number(entry.hours).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <Card flush title={loading ? 'Clientes' : `${visible.length} ${visible.length === 1 ? 'cliente' : 'clientes'}`}>
+        {loading ? (
+          <Loading label="Cargando clientes…" />
+        ) : (
+          <Table
+            columns={[
+              { key: 'company', label: 'Empresa', width: 260 },
+              { key: 'contact', label: 'Contacto', width: 180 },
+              { key: 'status', label: 'Estado', width: 130 },
+              { key: 'plan', label: 'Plan', width: 180 },
+              { key: 'created', label: 'Alta', width: 115 },
+              { key: 'actions', label: '', width: 200 },
+            ]}
+          >
+            {visible.length === 0 ? (
+              <TableEmpty colSpan={6}>{term ? 'Ningún cliente coincide con la búsqueda' : 'Todavía no hay clientes'}</TableEmpty>
             ) : (
-              <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 13, padding: 16 }}>
-                {ledger ? 'Sin movimientos' : 'Cargando...'}
-              </div>
+              visible.map((client) => {
+                const status = describe(CLIENT_STATUS, client.status);
+                const sub = activeSubscription(client);
+                const subStatus = sub ? describe(SUBSCRIPTION_STATUS, sub.status) : null;
+                return (
+                  <tr key={client.id}>
+                    <td>
+                      <div className="trn-cellstack">
+                        <span className="t-strong">{client.company_name}</span>
+                        <span className="trn-cellstack__sub trn-mono">{client.client_number || '—'}</span>
+                      </div>
+                    </td>
+                    <td className="trn-muted">{client.contact_name || '—'}</td>
+                    <td><Badge tone={status.tone} dot>{status.label}</Badge></td>
+                    <td>
+                      {sub ? (
+                        <div className="trn-cellstack">
+                          <span>{sub.plans?.name || '—'}</span>
+                          <span className="trn-cellstack__sub">{subStatus.label}</span>
+                        </div>
+                      ) : <span className="trn-muted">Sin plan</span>}
+                    </td>
+                    <td className="trn-muted trn-nowrap">{formatDate(client.created_at)}</td>
+                    <td>
+                      <div className="trn-row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                        <Button size="sm" variant="secondary" onClick={() => openDetail(client)}>Detalle</Button>
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(client)}>Editar</Button>
+                        {sub?.status === 'solicitada' && (
+                          <Button size="sm" variant="primary" onClick={() => handleActivate(client)}>Activar</Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
-          </div>
-        </div>
+          </Table>
+        )}
+      </Card>
+
+      {editor && (
+        <Modal
+          title={editor.client ? 'Editar cliente' : 'Nuevo cliente'}
+          subtitle={editor.client ? editor.client.client_number : 'El número de cliente se genera automáticamente.'}
+          onClose={() => setEditor(null)}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setEditor(null)}>Cancelar</Button>
+              <Button variant="primary" onClick={handleSave} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</Button>
+            </>
+          }
+        >
+          <form onSubmit={handleSave} className="trn-stack">
+            <Field label="Nombre de la empresa" htmlFor="companyName">
+              <Input
+                id="companyName"
+                value={editor.form.companyName}
+                onChange={(e) => setEditor((s) => ({ ...s, form: { ...s.form, companyName: e.target.value } }))}
+                autoFocus
+              />
+            </Field>
+            <Field label="Nombre de contacto" htmlFor="contactName">
+              <Input
+                id="contactName"
+                value={editor.form.contactName}
+                onChange={(e) => setEditor((s) => ({ ...s, form: { ...s.form, contactName: e.target.value } }))}
+              />
+            </Field>
+            <Field label="Estado" htmlFor="clientStatus">
+              <Select
+                id="clientStatus"
+                value={editor.form.status}
+                onChange={(e) => setEditor((s) => ({ ...s, form: { ...s.form, status: e.target.value } }))}
+                options={optionsOf(CLIENT_STATUS)}
+              />
+            </Field>
+          </form>
+        </Modal>
       )}
-    </div>
+
+      {detail && (
+        <Modal
+          wide
+          title={detail.company_name}
+          subtitle={`${detail.client_number || 'Sin número'} · ${describe(CLIENT_STATUS, detail.status).label}`}
+          onClose={() => { setDetail(null); setLedger({ status: 'idle', rows: [], error: null }); }}
+        >
+          <div className="trn-stats" style={{ marginBottom: 18 }}>
+            <Stat label="Contacto" value={<span style={{ fontSize: 16 }}>{detail.contact_name || '—'}</span>} />
+            <Stat label="Plan" value={<span style={{ fontSize: 16 }}>{activeSubscription(detail)?.plans?.name || 'Sin plan'}</span>} />
+            <Stat
+              label="Saldo de horas"
+              value={formatHours(ledgerBalance, { signed: true })}
+              tone={ledgerBalance < 0 ? 'danger' : 'success'}
+            />
+          </div>
+
+          <Card title="Ajuste manual de horas" subtitle="Usa un valor negativo para descontar horas." style={{ marginBottom: 18 }}>
+            <form onSubmit={handleAdjustment} className="trn-row" style={{ alignItems: 'flex-end', gap: 12 }}>
+              <Field label="Horas" htmlFor="adjHours">
+                <Input
+                  id="adjHours"
+                  type="number"
+                  step="0.25"
+                  value={adjustment.hours}
+                  onChange={(e) => setAdjustment({ ...adjustment, hours: e.target.value })}
+                  placeholder="2.5"
+                  style={{ width: 110 }}
+                />
+              </Field>
+              <Field label="Motivo" htmlFor="adjDesc" className="trn-field--grow">
+                <Input
+                  id="adjDesc"
+                  value={adjustment.description}
+                  onChange={(e) => setAdjustment({ ...adjustment, description: e.target.value })}
+                  placeholder="Motivo del ajuste"
+                />
+              </Field>
+              <Button type="submit" variant="primary" disabled={saving}>Registrar</Button>
+            </form>
+          </Card>
+
+          <Card title="Libro de horas" flush>
+            {ledger.status === 'loading' && <Loading label="Cargando movimientos…" />}
+            {ledger.status === 'error' && (
+              <div style={{ padding: 16 }}><Alert tone="danger">{ledger.error}</Alert></div>
+            )}
+            {ledger.status === 'ready' && (
+              <Table
+                columns={[
+                  { key: 'date', label: 'Fecha', width: 120 },
+                  { key: 'period', label: 'Periodo', width: 100 },
+                  { key: 'type', label: 'Tipo', width: 140 },
+                  { key: 'desc', label: 'Concepto' },
+                  { key: 'hours', label: 'Horas', align: 'right', width: 100 },
+                ]}
+              >
+                {ledger.rows.length === 0 ? (
+                  <TableEmpty colSpan={5}>Sin movimientos</TableEmpty>
+                ) : (
+                  ledger.rows.map((row) => {
+                    const type = describe(LEDGER_TYPE, row.type);
+                    const value = Number(row.hours);
+                    return (
+                      <tr key={row.id}>
+                        <td className="trn-muted trn-nowrap">{formatDate(row.created_at)}</td>
+                        <td className="trn-muted trn-mono">{row.period}</td>
+                        <td><Badge tone={type.tone}>{type.label}</Badge></td>
+                        <td>
+                          <div className="trn-truncate">{row.description || '—'}</div>
+                          {row.tickets?.folio && <div className="trn-cellstack__sub trn-mono">{row.tickets.folio}</div>}
+                        </td>
+                        <td className={`num ${value < 0 ? 'trn-neg' : 'trn-pos'}`}>{formatHours(value, { signed: true })}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </Table>
+            )}
+          </Card>
+        </Modal>
+      )}
+    </>
   );
 }

@@ -1,243 +1,240 @@
-import React, { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import {
+  Alert, Badge, Button, Card, Checkbox, Field, Input, Loading, Modal,
+  PageHeader, Select, Table, TableEmpty, Textarea,
+} from '../../components/ui';
+import { parseFeatures } from '../../lib/domain';
+import { ServiceIcon } from '../../components/Icons';
 
-const ICON_OPTIONS = ['code', 'support', 'monitor', 'shield', 'consulting', 'migrate'];
+const ICON_OPTIONS = [
+  { value: 'code', label: 'Código' },
+  { value: 'support', label: 'Soporte' },
+  { value: 'monitor', label: 'Monitoreo' },
+  { value: 'shield', label: 'Seguridad' },
+  { value: 'consulting', label: 'Consultoría' },
+  { value: 'migrate', label: 'Migración' },
+];
+
+const EMPTY_FORM = {
+  slug: '', title: '', subtitle: '', description: '', features: '',
+  icon: 'code', active: true, sortOrder: 0,
+};
+
+const slugify = (value) => value
+  .toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
 
 export default function ServiciosAdmin() {
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ title: '', subtitle: '', description: '', features: '', icon: 'code', active: true, sort_order: 0 });
+  const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [editor, setEditor] = useState(null); // { service|null, form }
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { loadServices(); }, []);
-
-  async function loadServices() {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
       const data = await api.getAdminServices();
       setServices(Array.isArray(data) ? data : []);
     } catch (err) {
-      alert('Error al cargar servicios: ' + err.message);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  function handleEdit(svc) {
-    setEditing(svc);
-    const features = Array.isArray(svc.features)
-      ? svc.features.join('\n')
-      : (typeof svc.features === 'string' ? JSON.parse(svc.features).join('\n') : '');
-    setForm({
-      title: svc.title || '',
-      subtitle: svc.subtitle || '',
-      description: svc.description || '',
-      features,
-      icon: svc.icon || 'code',
-      active: svc.active !== undefined ? svc.active : true,
-      sort_order: svc.sort_order || 0,
-    });
-  }
+  useEffect(() => { load(); }, [load]);
 
-  async function handleSave() {
+  const openCreate = () => setEditor({ service: null, form: EMPTY_FORM });
+  const openEdit = (service) => setEditor({
+    service,
+    form: {
+      slug: service.slug || '',
+      title: service.title || '',
+      subtitle: service.subtitle || '',
+      description: service.description || '',
+      features: parseFeatures(service.features).join('\n'),
+      icon: service.icon || 'code',
+      active: service.active !== false,
+      sortOrder: service.sort_order ?? 0,
+    },
+  });
+
+  const setForm = (patch) => setEditor((s) => ({ ...s, form: { ...s.form, ...patch } }));
+
+  const handleSave = async (e) => {
+    e?.preventDefault();
+    const { service, form } = editor;
+    if (!form.title.trim()) {
+      setNotice({ tone: 'warn', text: 'El título es obligatorio.' });
+      return;
+    }
+    const slug = (service ? form.slug : form.slug || slugify(form.title)).trim();
+    if (!slug) {
+      setNotice({ tone: 'warn', text: 'El identificador (slug) es obligatorio.' });
+      return;
+    }
+
+    setSaving(true);
+    setNotice(null);
+    // The API uses snake_case for this resource.
+    const payload = {
+      title: form.title.trim(),
+      subtitle: form.subtitle.trim(),
+      description: form.description.trim(),
+      features: form.features.split('\n').map((f) => f.trim()).filter(Boolean),
+      icon: form.icon,
+      active: form.active,
+      sort_order: parseInt(form.sortOrder, 10) || 0,
+    };
     try {
-      setSaving(true);
-      const featuresList = form.features.split('\n').map(f => f.trim()).filter(Boolean);
-      await api.updateAdminService(editing.slug, {
-        title: form.title,
-        subtitle: form.subtitle,
-        description: form.description,
-        features: featuresList,
-        icon: form.icon,
-        active: form.active,
-        sort_order: parseInt(form.sort_order) || 0,
-      });
-      setEditing(null);
-      loadServices();
+      if (service) await api.updateAdminService(service.slug, payload);
+      else await api.createAdminService({ ...payload, slug });
+      setEditor(null);
+      setNotice({ tone: 'success', text: service ? 'Servicio actualizado.' : 'Servicio creado.' });
+      await load();
     } catch (err) {
-      alert('Error al guardar: ' + err.message);
+      setNotice({ tone: 'danger', text: err.message });
     } finally {
       setSaving(false);
     }
-  }
+  };
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>Cargando servicios...</div>;
+  const handleDelete = async (service) => {
+    if (!window.confirm(`¿Eliminar "${service.title}"? Dejará de aparecer en el sitio público.`)) return;
+    setNotice(null);
+    try {
+      await api.deleteAdminService(service.slug);
+      setNotice({ tone: 'success', text: 'Servicio eliminado.' });
+      await load();
+    } catch (err) {
+      setNotice({ tone: 'danger', text: err.message });
+    }
+  };
 
   return (
-    <div>
-      <h1 style={{ margin: '0 0 24px', fontSize: 24, fontWeight: 700, color: '#111' }}>Servicios</h1>
+    <>
+      <PageHeader
+        title="Servicios"
+        description="Tarjetas de servicio que se publican en la landing y en la página de Servicios."
+        actions={<Button variant="primary" onClick={openCreate}>Nuevo servicio</Button>}
+      />
 
-      {editing && (
-        <div style={{
-          background: '#fff',
-          borderRadius: 12,
-          border: '1px solid #e5e7eb',
-          padding: 24,
-          marginBottom: 24,
-        }}>
-          <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600 }}>
-            Editar servicio: {editing.title}
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Titulo</label>
-              <input
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, boxSizing: 'border-box' }}
-              />
+      {notice && <Alert tone={notice.tone} onClose={() => setNotice(null)}>{notice.text}</Alert>}
+      {error && <Alert tone="danger" title="No se pudieron cargar los servicios">{error}</Alert>}
+
+      <Card flush>
+        {loading ? (
+          <Loading label="Cargando servicios…" />
+        ) : (
+          <Table
+            columns={[
+              { key: 'service', label: 'Servicio' },
+              { key: 'slug', label: 'Slug', width: 170 },
+              { key: 'order', label: 'Orden', align: 'right', width: 90 },
+              { key: 'active', label: 'Visible', width: 110 },
+              { key: 'actions', label: '', width: 180 },
+            ]}
+          >
+            {services.length === 0 ? (
+              <TableEmpty colSpan={5}>No hay servicios configurados</TableEmpty>
+            ) : (
+              services.map((service) => (
+                <tr key={service.id}>
+                  <td>
+                    <div className="trn-row" style={{ gap: 12, flexWrap: 'nowrap' }}>
+                      <span style={{
+                        width: 32, height: 32, borderRadius: 8, display: 'grid', placeItems: 'center',
+                        background: 'var(--trn-navy)', color: 'var(--trn-cream)', flexShrink: 0,
+                      }}>
+                        <ServiceIcon name={service.icon} size={17} color="currentColor" />
+                      </span>
+                      <div className="trn-cellstack">
+                        <span className="t-strong">{service.title}</span>
+                        <span className="trn-cellstack__sub trn-truncate">{service.subtitle || '—'}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="trn-muted t-mono">{service.slug}</td>
+                  <td className="num trn-muted">{service.sort_order ?? 0}</td>
+                  <td><Badge tone={service.active ? 'success' : 'neutral'} dot>{service.active ? 'Sí' : 'No'}</Badge></td>
+                  <td>
+                    <div className="trn-row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                      <Button size="sm" variant="secondary" onClick={() => openEdit(service)}>Editar</Button>
+                      <Button size="sm" variant="danger" onClick={() => handleDelete(service)}>Eliminar</Button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </Table>
+        )}
+      </Card>
+
+      {editor && (
+        <Modal
+          wide
+          title={editor.service ? `Editar servicio: ${editor.service.title}` : 'Nuevo servicio'}
+          subtitle={editor.service?.slug}
+          onClose={() => setEditor(null)}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setEditor(null)}>Cancelar</Button>
+              <Button variant="primary" onClick={handleSave} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</Button>
+            </>
+          }
+        >
+          <form onSubmit={handleSave} className="trn-stack">
+            <div className="trn-formgrid trn-formgrid--2">
+              <Field label="Título" htmlFor="title">
+                <Input id="title" value={editor.form.title} onChange={(e) => setForm({ title: e.target.value })} autoFocus />
+              </Field>
+              <Field label="Subtítulo" htmlFor="subtitle">
+                <Input id="subtitle" value={editor.form.subtitle} onChange={(e) => setForm({ subtitle: e.target.value })} />
+              </Field>
             </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Subtitulo</label>
-              <input
-                value={form.subtitle}
-                onChange={(e) => setForm({ ...form, subtitle: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, boxSizing: 'border-box' }}
-              />
-            </div>
-          </div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Descripcion</label>
-            <textarea
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              rows={3}
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }}
-            />
-          </div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Caracteristicas (una por linea)</label>
-            <textarea
-              value={form.features}
-              onChange={(e) => setForm({ ...form, features: e.target.value })}
-              rows={5}
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }}
-            />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Icono</label>
-              <select
-                value={form.icon}
-                onChange={(e) => setForm({ ...form, icon: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, boxSizing: 'border-box' }}
-              >
-                {ICON_OPTIONS.map(opt => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Orden</label>
-              <input
-                type="number"
-                value={form.sort_order}
-                onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, boxSizing: 'border-box' }}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'end' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
-                <input
-                  type="checkbox"
-                  checked={form.active}
-                  onChange={(e) => setForm({ ...form, active: e.target.checked })}
-                  style={{ width: 18, height: 18 }}
+
+            {!editor.service && (
+              <Field label="Identificador (slug)" htmlFor="slug" hint="Se usa en la URL. Si lo dejas vacío se genera desde el título.">
+                <Input
+                  id="slug"
+                  className="trn-input trn-mono"
+                  value={editor.form.slug}
+                  onChange={(e) => setForm({ slug: slugify(e.target.value) })}
+                  placeholder={slugify(editor.form.title) || 'mi-servicio'}
                 />
-                Activo
-              </label>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              style={{
-                padding: '8px 20px',
-                background: '#2563eb',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 6,
-                cursor: saving ? 'not-allowed' : 'pointer',
-                fontSize: 13,
-                fontWeight: 600,
-                opacity: saving ? 0.6 : 1,
-              }}
-            >
-              {saving ? 'Guardando...' : 'Guardar'}
-            </button>
-            <button
-              onClick={() => setEditing(null)}
-              style={{
-                padding: '8px 20px',
-                background: '#f3f4f6',
-                color: '#374151',
-                border: '1px solid #d1d5db',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontSize: 13,
-                fontWeight: 500,
-              }}
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
-      )}
+              </Field>
+            )}
 
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: '#f9fafb' }}>
-              <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Servicio</th>
-              <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Slug</th>
-              <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Icono</th>
-              <th style={{ padding: '12px 20px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Activo</th>
-              <th style={{ padding: '12px 20px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Orden</th>
-              <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {services.map((svc) => (
-              <tr key={svc.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                <td style={{ padding: '12px 20px' }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{svc.title}</div>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{svc.subtitle}</div>
-                </td>
-                <td style={{ padding: '12px 20px', fontSize: 13, color: '#6b7280', fontFamily: 'monospace' }}>{svc.slug}</td>
-                <td style={{ padding: '12px 20px', fontSize: 13, color: '#374151' }}>{svc.icon}</td>
-                <td style={{ padding: '12px 20px', textAlign: 'center' }}>
-                  <span style={{
-                    display: 'inline-block',
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    background: svc.active ? '#16a34a' : '#d1d5db',
-                  }} />
-                </td>
-                <td style={{ padding: '12px 20px', textAlign: 'center', fontSize: 13, color: '#6b7280' }}>{svc.sort_order}</td>
-                <td style={{ padding: '12px 20px' }}>
-                  <button
-                    onClick={() => handleEdit(svc)}
-                    style={{
-                      padding: '5px 12px',
-                      background: '#f3f4f6',
-                      border: '1px solid #d1d5db',
-                      borderRadius: 4,
-                      cursor: 'pointer',
-                      fontSize: 12,
-                      color: '#374151',
-                    }}
-                  >
-                    Editar
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+            <Field label="Descripción" htmlFor="description">
+              <Textarea id="description" rows={3} value={editor.form.description} onChange={(e) => setForm({ description: e.target.value })} />
+            </Field>
+
+            <Field label="Características" htmlFor="features" hint="Una por línea.">
+              <Textarea id="features" rows={5} value={editor.form.features} onChange={(e) => setForm({ features: e.target.value })} />
+            </Field>
+
+            <div className="trn-formgrid">
+              <Field label="Icono" htmlFor="icon">
+                <Select id="icon" value={editor.form.icon} onChange={(e) => setForm({ icon: e.target.value })} options={ICON_OPTIONS} />
+              </Field>
+              <Field label="Orden" htmlFor="sortOrder">
+                <Input id="sortOrder" type="number" step="1" value={editor.form.sortOrder} onChange={(e) => setForm({ sortOrder: e.target.value })} />
+              </Field>
+              <Field label="Visibilidad">
+                <div style={{ paddingTop: 8 }}>
+                  <Checkbox label="Publicar en el sitio" checked={editor.form.active} onChange={(e) => setForm({ active: e.target.checked })} />
+                </div>
+              </Field>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </>
   );
 }

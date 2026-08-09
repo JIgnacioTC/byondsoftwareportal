@@ -132,6 +132,16 @@ router.post('/:id/sync-stripe', async (req, res) => {
       return res.status(404).json({ error: 'Plan no encontrado' });
     }
 
+    // Quote-based plans are negotiated offline: there is nothing to price in Stripe.
+    if (plan.billing_type === 'quote') {
+      return res.status(400).json({ error: 'Los planes por cotización no se sincronizan con Stripe' });
+    }
+
+    const amount = Number(plan.base_price);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'El plan necesita un precio base mayor a 0 para sincronizarse con Stripe' });
+    }
+
     let priceId = plan.stripe_price_id;
 
     // Archive old price if exists (Stripe prices are immutable)
@@ -169,20 +179,20 @@ router.post('/:id/sync-stripe', async (req, res) => {
       productId = product.id;
     }
 
-    // Create new Stripe Price
+    // Create new Stripe Price. One-time plans must NOT carry a recurring interval.
     const price = await stripe.prices.create({
       product: productId,
-      unit_amount: Math.round(parseFloat(plan.price_monthly) * 100),
+      unit_amount: Math.round(amount * 100),
       currency: 'mxn',
-      recurring: { interval: 'month' },
+      ...(plan.billing_type === 'one-time' ? {} : { recurring: { interval: 'month' } }),
       metadata: { planSlug: plan.slug, planId: String(plan.id) },
     });
     priceId = price.id;
 
-    // Save Stripe price ID back to DB
+    // Save Stripe product + price IDs back to DB
     const { data: updated, error: updateError } = await db
       .from('plans')
-      .update({ stripe_price_id: priceId })
+      .update({ stripe_price_id: priceId, stripe_product_id: productId })
       .eq('id', plan.id)
       .select()
       .single();

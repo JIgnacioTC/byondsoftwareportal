@@ -1,134 +1,136 @@
-import React from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
-import { IconChart, IconBuilding, IconUsers, IconBox, IconTicket, IconTrending, IconLayout, IconTool } from '../../components/Icons';
 import TorrenLogo from '../../components/TorrenLogo';
+import { USER_ROLE, describe, initials } from '../../lib/domain';
+import { Badge } from '../../components/ui';
+import {
+  IconBuilding, IconChart, IconLayout, IconLogout, IconMenu, IconTicket,
+  IconTool, IconTrending, IconUsers, IconBox, IconX,
+} from '../../components/Icons';
 
-const navItems = [
-  { to: '/admin', label: 'Dashboard', Icon: IconChart },
-  { to: '/admin/clientes', label: 'Clientes', Icon: IconBuilding },
-  { to: '/admin/usuarios', label: 'Usuarios', Icon: IconUsers },
-  { to: '/admin/planes', label: 'Planes', Icon: IconBox },
-  { to: '/admin/tickets', label: 'Tickets', Icon: IconTicket },
-  { to: '/admin/reportes', label: 'Reportes', Icon: IconTrending },
-  { to: '/admin/contenido', label: 'Contenido', Icon: IconLayout },
-  { to: '/admin/servicios', label: 'Servicios', Icon: IconTool },
+const NAV = [
+  {
+    group: 'Operación',
+    items: [
+      { to: '/admin', label: 'Dashboard', Icon: IconChart, end: true },
+      { to: '/admin/tickets', label: 'Tickets', Icon: IconTicket },
+      { to: '/admin/reportes', label: 'Reportes', Icon: IconTrending },
+    ],
+  },
+  {
+    group: 'Cuentas',
+    items: [
+      { to: '/admin/clientes', label: 'Clientes', Icon: IconBuilding },
+      { to: '/admin/usuarios', label: 'Usuarios', Icon: IconUsers },
+      { to: '/admin/planes', label: 'Planes', Icon: IconBox },
+    ],
+  },
+  {
+    group: 'Sitio público',
+    items: [
+      { to: '/admin/contenido', label: 'Contenido', Icon: IconLayout },
+      { to: '/admin/servicios', label: 'Servicios', Icon: IconTool },
+    ],
+  },
 ];
+
+const ALL_ITEMS = NAV.flatMap((g) => g.items);
+
+function currentSection(pathname) {
+  const match = [...ALL_ITEMS]
+    .sort((a, b) => b.to.length - a.to.length)
+    .find((item) => pathname === item.to || pathname.startsWith(`${item.to}/`));
+  return match?.label || 'Dashboard';
+}
 
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const [navOpen, setNavOpen] = useState(false);
 
-  const handleLogout = () => {
-    logout();
+  useEffect(() => { setNavOpen(false); }, [pathname]);
+
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
+  const displayName = user?.fullName || user?.email || 'Usuario';
+  const role = describe(USER_ROLE, user?.role);
+
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'system-ui, sans-serif' }}>
-      <aside style={{
-        width: 250,
-        background: '#0F1E2D',
-        color: '#fff',
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        bottom: 0,
-        zIndex: 100,
-        borderRight: '1px solid rgba(196,180,159,0.15)',
-      }}>
-        <div style={{ padding: '24px 20px', borderBottom: '1px solid rgba(196,180,159,0.12)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <TorrenLogo variant="horizontal" theme="crema" height={22} />
-          <span style={{ fontSize: 11, fontWeight: 600, color: '#C4B49F', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-            Administración
-          </span>
-        </div>
+    <div className="trn">
+      <div className="trn-shell">
+        {navOpen && <div className="trn-scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />}
 
-        <nav style={{ flex: 1, padding: '16px 0' }}>
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/admin'}
-              style={({ isActive }) => ({
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                padding: '12px 20px',
-                color: '#fff',
-                textDecoration: 'none',
-                fontSize: 14,
-                fontWeight: isActive ? 600 : 400,
-                background: isActive ? 'rgba(255,255,255,0.15)' : 'transparent',
-                borderLeft: isActive ? '3px solid #60a5fa' : '3px solid transparent',
-                transition: 'background 0.2s',
-              })}
-            >
-              <item.Icon size={18} color="#fff" />
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-
-        <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-          <div style={{ marginBottom: 12, fontSize: 13 }}>
-            <div style={{ fontWeight: 600 }}>{user?.full_name || user?.email}</div>
-            <div style={{ opacity: 0.7, fontSize: 11 }}>{user?.role}</div>
+        <aside className={`trn-rail${navOpen ? ' trn-rail--open' : ''}`}>
+          <div className="trn-rail__brand">
+            <TorrenLogo variant="horizontal" theme="crema" height={20} />
+            <span className="trn-rail__eyebrow">Consola interna</span>
           </div>
-          <button
-            onClick={handleLogout}
-            style={{
-              width: '100%',
-              padding: '10px 16px',
-              background: 'rgba(255,255,255,0.1)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: 6,
-              color: '#fff',
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 500,
-            }}
-          >
-            Cerrar sesion
-          </button>
-        </div>
-      </aside>
 
-      <div style={{ flex: 1, marginLeft: 250, display: 'flex', flexDirection: 'column' }}>
-        <header style={{
-          background: '#fff',
-          borderBottom: '1px solid #e5e7eb',
-          padding: '16px 32px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          position: 'sticky',
-          top: 0,
-          zIndex: 50,
-        }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#111' }}>
-            Portal de Administracion
-          </h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 13, color: '#6b7280' }}>{user?.full_name || user?.email}</span>
-            <span style={{
-              padding: '3px 10px',
-              borderRadius: 12,
-              fontSize: 11,
-              fontWeight: 600,
-              background: '#f3e8ff',
-              color: '#7c3aed',
-            }}>
-              {user?.role}
-            </span>
+          <nav className="trn-rail__nav" aria-label="Secciones de administración">
+            {NAV.map(({ group, items }) => (
+              <div key={group}>
+                <p className="trn-rail__group">{group}</p>
+                {items.map(({ to, label, Icon, end }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={end}
+                    className={({ isActive }) => `trn-navlink${isActive ? ' trn-navlink--active' : ''}`}
+                  >
+                    <Icon size={17} color="currentColor" />
+                    {label}
+                  </NavLink>
+                ))}
+              </div>
+            ))}
+          </nav>
+
+          <div className="trn-rail__foot">
+            <div className="trn-identity">
+              <span className="trn-avatar">{initials(displayName)}</span>
+              <div style={{ minWidth: 0 }}>
+                <div className="trn-identity__name">{displayName}</div>
+                <div className="trn-identity__meta">{role.label}</div>
+              </div>
+            </div>
+            <button type="button" className="trn-btn trn-btn--secondary trn-btn--sm trn-btn--block" onClick={handleLogout}>
+              <IconLogout size={15} color="currentColor" />
+              Cerrar sesión
+            </button>
           </div>
-        </header>
+        </aside>
 
-        <main style={{ flex: 1, padding: 32, background: '#f9fafb', minHeight: 'calc(100vh - 60px)' }}>
-          <Outlet />
-        </main>
+        <div className="trn-main">
+          <header className="trn-topbar">
+            <div className="trn-crumb">
+              <button
+                type="button"
+                className="trn-btn trn-btn--ghost trn-btn--sm trn-burger"
+                onClick={() => setNavOpen((v) => !v)}
+                aria-label={navOpen ? 'Cerrar menú' : 'Abrir menú'}
+                aria-expanded={navOpen}
+              >
+                {navOpen ? <IconX size={18} color="currentColor" /> : <IconMenu size={18} color="currentColor" />}
+              </button>
+              <span className="trn-hide-sm">Administración</span>
+              <span aria-hidden="true" className="trn-hide-sm">/</span>
+              <strong>{currentSection(pathname)}</strong>
+            </div>
+            <div className="trn-row trn-topbar__meta">
+              <span className="trn-hide-sm"><Badge tone={role.tone}>{role.label}</Badge></span>
+              <span className="trn-avatar trn-avatar--light">{initials(displayName)}</span>
+            </div>
+          </header>
+
+          <main className="trn-content">
+            <Outlet />
+          </main>
+        </div>
       </div>
     </div>
   );

@@ -1,470 +1,328 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
+import {
+  Alert, Badge, Button, Card, Checkbox, DefinitionList, EmptyState, Field, Input,
+  Loading, Select, Table, TableEmpty, Textarea,
+} from '../../components/ui';
+import {
+  TICKET_PRIORITY, TICKET_STATUS, TICKET_TYPE,
+  describe, formatDate, formatDateTime, formatHours, initials, optionsOf,
+} from '../../lib/domain';
+import { IconArrowLeft, IconMessage, IconSend } from '../../components/Icons';
 
-const statusOptions = [
-  { value: 'nuevo', label: 'Nuevo' },
-  { value: 'en_analisis', label: 'En análisis' },
-  { value: 'en_progreso', label: 'En progreso' },
-  { value: 'esperando_cliente', label: 'Esperando cliente' },
-  { value: 'resuelto', label: 'Resuelto' },
-  { value: 'cerrado', label: 'Cerrado' },
-];
-const statusColors = {
-  nuevo: { bg: '#dbeafe', text: '#1e40af' },
-  en_analisis: { bg: '#fef9c3', text: '#a16207' },
-  en_progreso: { bg: '#ffedd5', text: '#c2410c' },
-  esperando_cliente: { bg: '#f3e8ff', text: '#7c3aed' },
-  resuelto: { bg: '#dcfce7', text: '#166534' },
-  cerrado: { bg: '#f3f4f6', text: '#6b7280' },
-};
-
-const priorityOptions = [
-  { value: 'baja', label: 'Baja' },
-  { value: 'media', label: 'Media' },
-  { value: 'alta', label: 'Alta' },
-  { value: 'critica', label: 'Crítica' },
-];
-const priorityColors = {
-  baja: { bg: '#f3f4f6', text: '#6b7280' },
-  media: { bg: '#dbeafe', text: '#1d4ed8' },
-  alta: { bg: '#ffedd5', text: '#c2410c' },
-  critica: { bg: '#fef2f2', text: '#dc2626' },
-};
-
-const typeLabels = { bug: 'Bug', feature: 'Feature', soporte: 'Soporte', consulta: 'Consulta' };
+const EMPTY_TIME = { hours: '', workDate: '', notes: '', billable: true };
 
 export default function TicketDetailAdmin() {
   const { id } = useParams();
   const navigate = useNavigate();
+
   const [ticket, setTicket] = useState(null);
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+
   const [comment, setComment] = useState({ body: '', isInternal: false });
-  const [timeEntry, setTimeEntry] = useState({ hours: '', workDate: '', notes: '', billable: true });
-  const [saving, setSaving] = useState(false);
+  const [timeEntry, setTimeEntry] = useState(EMPTY_TIME);
+  const [busy, setBusy] = useState(null);
 
-  useEffect(() => { loadAll(); }, [id]);
-
-  const loadAll = async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      const [ticketData, agentsData] = await Promise.all([
-        api.getTicket(id),
-        api.getAgents(),
-      ]);
+      const [ticketData, agentsData] = await Promise.all([api.getTicket(id), api.getAgents()]);
       setTicket(ticketData);
-      setAgents(Array.isArray(agentsData) ? agentsData : agentsData.agents || []);
+      setAgents(Array.isArray(agentsData) ? agentsData : []);
     } catch (err) {
-      alert('Error al cargar ticket: ' + (err.message || ''));
+      setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
-  const handleUpdateField = async (field, value) => {
+  useEffect(() => { load(); }, [load]);
+
+  /**
+   * `field` is the API payload key (status | priority | type | assignedTo);
+   * `column` is the DB column the response uses, so local state stays in sync.
+   */
+  const updateField = async (field, column, value) => {
+    const previous = ticket[column];
+    setTicket((t) => ({ ...t, [column]: value }));
+    setNotice(null);
     try {
       await api.updateTicket(id, { [field]: value });
-      setTicket((prev) => ({ ...prev, [field]: value }));
+      await load();
     } catch (err) {
-      alert('Error al actualizar: ' + (err.message || ''));
+      setTicket((t) => ({ ...t, [column]: previous }));
+      setNotice({ tone: 'danger', text: `No se pudo actualizar: ${err.message}` });
     }
   };
 
-  const handleAddComment = async () => {
-    if (!comment.body.trim()) return;
+  const handleAddComment = async (e) => {
+    e.preventDefault();
+    const body = comment.body.trim();
+    if (!body) return;
+    setBusy('comment');
+    setNotice(null);
     try {
-      setSaving(true);
-      await api.addTicketComment(id, { body: comment.body, isInternal: comment.isInternal });
+      await api.addTicketComment(id, { body, isInternal: comment.isInternal });
       setComment({ body: '', isInternal: false });
-      loadAll();
+      await load();
     } catch (err) {
-      alert('Error al agregar comentario: ' + (err.message || ''));
+      setNotice({ tone: 'danger', text: `No se pudo publicar el comentario: ${err.message}` });
     } finally {
-      setSaving(false);
+      setBusy(null);
     }
   };
 
-  const handleAddTimeEntry = async () => {
+  const handleAddTime = async (e) => {
+    e.preventDefault();
     const hours = parseFloat(timeEntry.hours);
-    if (!hours || hours < 0.25) {
-      alert('Las horas deben ser mínimo 0.25');
+    if (!Number.isFinite(hours) || hours < 0.25) {
+      setNotice({ tone: 'warn', text: 'Las horas deben ser al menos 0.25.' });
       return;
     }
+    setBusy('time');
+    setNotice(null);
     try {
-      setSaving(true);
       await api.addTimeEntry(id, {
         hours,
-        workDate: timeEntry.workDate,
+        workDate: timeEntry.workDate || undefined,
         notes: timeEntry.notes,
         billable: timeEntry.billable,
       });
-      setTimeEntry({ hours: '', workDate: '', notes: '', billable: true });
-      loadAll();
+      setTimeEntry(EMPTY_TIME);
+      setNotice({ tone: 'success', text: `Se registraron ${hours.toFixed(2)} h en este ticket.` });
+      await load();
     } catch (err) {
-      alert('Error al registrar horas: ' + (err.message || ''));
+      setNotice({ tone: 'danger', text: `No se pudo registrar el tiempo: ${err.message}` });
     } finally {
-      setSaving(false);
+      setBusy(null);
     }
   };
 
-  const selectStyle = {
-    padding: '7px 10px',
-    border: '1px solid #d1d5db',
-    borderRadius: 6,
-    fontSize: 13,
-    background: '#fff',
-  };
+  const totalHours = useMemo(
+    () => (ticket?.timeEntries || []).reduce((sum, e) => sum + (Number(e.hours) || 0), 0),
+    [ticket],
+  );
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>Cargando ticket...</div>;
-  if (!ticket) return <div style={{ textAlign: 'center', padding: 40, color: '#dc2626' }}>Ticket no encontrado</div>;
+  if (loading) return <Loading label="Cargando ticket…" />;
+  if (error || !ticket) {
+    return (
+      <>
+        <Button variant="ghost" size="sm" onClick={() => navigate('/admin/tickets')} style={{ marginBottom: 16 }}>
+          <IconArrowLeft size={15} color="currentColor" /> Volver a tickets
+        </Button>
+        <Alert tone="danger" title="No se pudo cargar el ticket">{error || 'Ticket no encontrado.'}</Alert>
+      </>
+    );
+  }
 
-  const sc = statusColors[ticket.status] || statusColors.nuevo;
-  const pc = priorityColors[ticket.priority] || priorityColors.media;
+  const status = describe(TICKET_STATUS, ticket.status);
+  const priority = describe(TICKET_PRIORITY, ticket.priority);
+  const type = describe(TICKET_TYPE, ticket.type);
+  const comments = ticket.comments || [];
+  const timeEntries = ticket.timeEntries || [];
 
   return (
-    <div>
-      <button
-        onClick={() => navigate('/admin/tickets')}
-        style={{
-          padding: '6px 14px',
-          background: '#f3f4f6',
-          border: '1px solid #d1d5db',
-          borderRadius: 6,
-          cursor: 'pointer',
-          fontSize: 13,
-          color: '#374151',
-          marginBottom: 20,
-        }}
-      >
-        ← Volver a tickets
-      </button>
+    <>
+      <Button variant="ghost" size="sm" onClick={() => navigate('/admin/tickets')} style={{ marginBottom: 14 }}>
+        <IconArrowLeft size={15} color="currentColor" /> Volver a tickets
+      </Button>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24 }}>
-        <div>
-          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: 24, marginBottom: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-              <div>
-                <div style={{ fontSize: 12, color: '#6b7280', fontFamily: 'monospace', marginBottom: 4 }}>{ticket.folio}</div>
-                <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#111' }}>{ticket.title}</h1>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <span style={{ padding: '4px 12px', borderRadius: 12, fontSize: 12, fontWeight: 600, background: sc.bg, color: sc.text }}>
-                  {statusOptions.find((s) => s.value === ticket.status)?.label || ticket.status}
-                </span>
-                <span style={{ padding: '4px 12px', borderRadius: 12, fontSize: 12, fontWeight: 600, background: pc.bg, color: pc.text }}>
-                  {priorityOptions.find((p) => p.value === ticket.priority)?.label || ticket.priority}
-                </span>
-                <span style={{ padding: '4px 12px', borderRadius: 12, fontSize: 12, fontWeight: 500, background: '#f3f4f6', color: '#374151', textTransform: 'capitalize' }}>
-                  {typeLabels[ticket.type] || ticket.type}
-                </span>
-              </div>
-            </div>
-            <div style={{ fontSize: 14, color: '#374151', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-              {ticket.description || 'Sin descripción'}
-            </div>
-            <div style={{ marginTop: 16, fontSize: 12, color: '#9ca3af' }}>
-              Creado: {ticket.created_at ? new Date(ticket.created_at).toLocaleString('es-MX') : '—'}
-              {ticket.clientName && <> · Cliente: {ticket.clientName}</>}
-            </div>
-          </div>
+      {notice && <Alert tone={notice.tone} onClose={() => setNotice(null)}>{notice.text}</Alert>}
 
-          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', marginBottom: 24 }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb', fontWeight: 600, fontSize: 15 }}>
-              Comentarios
+      <div className="trn-grid trn-grid--sidebar">
+        <div className="trn-stack">
+          <Card>
+            <p className="trn-eyebrow trn-mono" style={{ letterSpacing: '0.08em' }}>{ticket.folio}</p>
+            <h1 style={{ fontSize: 20, fontWeight: 620, letterSpacing: '-0.02em', margin: '0 0 12px' }}>{ticket.title}</h1>
+            <div className="trn-row">
+              <Badge tone={status.tone} dot>{status.label}</Badge>
+              <Badge tone={priority.tone}>Prioridad {priority.label.toLowerCase()}</Badge>
+              <Badge tone="neutral">{type.label}</Badge>
             </div>
-            <div style={{ maxHeight: 400, overflow: 'auto' }}>
-              {ticket.comments?.length > 0 ? ticket.comments.map((c, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    padding: '14px 20px',
-                    borderBottom: '1px solid #f3f4f6',
-                    background: c.is_internal ? '#fefce8' : '#fff',
-                    borderLeft: c.is_internal ? '3px solid #eab308' : '3px solid transparent',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>
-                      {c.users?.full_name || 'Anónimo'}
-                      {c.is_internal && (
-                        <span style={{
-                          marginLeft: 8,
-                          padding: '1px 8px',
-                          borderRadius: 8,
-                          fontSize: 10,
-                          fontWeight: 600,
-                          background: '#fef08a',
-                          color: '#a16207',
-                        }}>
-                          Interna
+            <hr className="trn-divider" style={{ margin: '16px 0' }} />
+            <div className="trn-prose">{ticket.description || 'Sin descripción.'}</div>
+          </Card>
+
+          <Card title={`Comentarios (${comments.length})`} flush>
+            {comments.length === 0 ? (
+              <EmptyState icon={<IconMessage size={20} />} title="Sin comentarios" description="Nadie ha escrito en este ticket todavía." />
+            ) : (
+              <div className="trn-thread">
+                {comments.map((c) => (
+                  <article key={c.id} className={`trn-msg${c.is_internal ? ' trn-msg--internal' : ''}`}>
+                    <div className="trn-msg__head">
+                      <span className="trn-msg__who">
+                        <span className="trn-avatar trn-avatar--light" style={{ width: 26, height: 26, fontSize: 10.5 }}>
+                          {initials(c.users?.full_name)}
                         </span>
-                      )}
-                    </span>
-                    <span style={{ fontSize: 11, color: '#9ca3af' }}>
-                      {c.created_at ? new Date(c.created_at).toLocaleString('es-MX') : ''}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.body}</div>
-                </div>
-              )) : (
-                <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
-                  Sin comentarios
-                </div>
-              )}
-            </div>
-            <div style={{ padding: 16, borderTop: '1px solid #e5e7eb', background: '#fafafa' }}>
-              <textarea
+                        {c.users?.full_name || 'Usuario'}
+                        {c.is_internal && <Badge tone="warn">Nota interna</Badge>}
+                      </span>
+                      <time className="trn-msg__when">{formatDateTime(c.created_at)}</time>
+                    </div>
+                    <div className="trn-msg__body">{c.body}</div>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            <form onSubmit={handleAddComment} style={{ padding: 16, borderTop: '1px solid var(--trn-line)', background: 'var(--trn-surface-2)' }}>
+              <Textarea
                 value={comment.body}
                 onChange={(e) => setComment({ ...comment, body: e.target.value })}
-                placeholder="Escribe un comentario..."
+                placeholder={comment.isInternal ? 'Nota interna, no visible para el cliente…' : 'Respuesta visible para el cliente…'}
                 rows={3}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: 6,
-                  fontSize: 13,
-                  resize: 'vertical',
-                  boxSizing: 'border-box',
-                  fontFamily: 'inherit',
-                }}
+                aria-label="Nuevo comentario"
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={comment.isInternal}
-                    onChange={(e) => setComment({ ...comment, isInternal: e.target.checked })}
-                    style={{ width: 16, height: 16 }}
-                  />
-                  Nota interna
-                </label>
-                <button
-                  onClick={handleAddComment}
-                  disabled={saving || !comment.body.trim()}
-                  style={{
-                    padding: '8px 20px',
-                    background: '#2563eb',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 6,
-                    cursor: saving || !comment.body.trim() ? 'not-allowed' : 'pointer',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    opacity: saving || !comment.body.trim() ? 0.5 : 1,
-                  }}
-                >
-                  Enviar
-                </button>
+              <div className="trn-row" style={{ justifyContent: 'space-between', marginTop: 10 }}>
+                <Checkbox
+                  label="Nota interna (no visible para el cliente)"
+                  checked={comment.isInternal}
+                  onChange={(e) => setComment({ ...comment, isInternal: e.target.checked })}
+                />
+                <Button type="submit" variant="primary" disabled={busy === 'comment' || !comment.body.trim()}>
+                  <IconSend size={14} color="currentColor" />
+                  {busy === 'comment' ? 'Enviando…' : 'Publicar'}
+                </Button>
               </div>
-            </div>
-          </div>
+            </form>
+          </Card>
 
-          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', marginBottom: 24 }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb', fontWeight: 600, fontSize: 15 }}>
-              Registro de horas
-            </div>
-            <div style={{ padding: 16, borderBottom: '1px solid #e5e7eb', background: '#fafafa' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '100px 140px 1fr 100px auto', gap: 12, alignItems: 'end' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 11, color: '#6b7280', marginBottom: 4 }}>Horas *</label>
-                  <input
+          <Card
+            title="Registro de horas"
+            subtitle="Las horas facturables descuentan de la bolsa del cliente"
+            actions={<Badge tone="neutral">{formatHours(totalHours)} en total</Badge>}
+            flush
+          >
+            <form onSubmit={handleAddTime} style={{ padding: 16, borderBottom: '1px solid var(--trn-line)', background: 'var(--trn-surface-2)' }}>
+              <div className="trn-row" style={{ alignItems: 'flex-end', gap: 12 }}>
+                <Field label="Horas" htmlFor="hours">
+                  <Input
+                    id="hours"
                     type="number"
                     step="0.25"
                     min="0.25"
                     value={timeEntry.hours}
                     onChange={(e) => setTimeEntry({ ...timeEntry, hours: e.target.value })}
                     placeholder="0.25"
-                    style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
+                    style={{ width: 100 }}
                   />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 11, color: '#6b7280', marginBottom: 4 }}>Fecha trabajo</label>
-                  <input
+                </Field>
+                <Field label="Fecha de trabajo" htmlFor="workDate">
+                  <Input
+                    id="workDate"
                     type="date"
                     value={timeEntry.workDate}
                     onChange={(e) => setTimeEntry({ ...timeEntry, workDate: e.target.value })}
-                    style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
+                    style={{ width: 165 }}
                   />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 11, color: '#6b7280', marginBottom: 4 }}>Notas</label>
-                  <input
+                </Field>
+                <Field label="Notas" htmlFor="notes" className="trn-field--grow">
+                  <Input
+                    id="notes"
                     value={timeEntry.notes}
                     onChange={(e) => setTimeEntry({ ...timeEntry, notes: e.target.value })}
-                    placeholder="Descripción del trabajo..."
-                    style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
+                    placeholder="Qué se trabajó…"
                   />
-                </div>
-                <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', paddingTop: 18 }}>
-                    <input
-                      type="checkbox"
-                      checked={timeEntry.billable}
-                      onChange={(e) => setTimeEntry({ ...timeEntry, billable: e.target.checked })}
-                      style={{ width: 16, height: 16 }}
-                    />
-                    Facturable
-                  </label>
-                </div>
-                <div>
-                  <button
-                    onClick={handleAddTimeEntry}
-                    disabled={saving}
-                    style={{
-                      padding: '7px 16px',
-                      background: '#16a34a',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 6,
-                      cursor: saving ? 'not-allowed' : 'pointer',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      opacity: saving ? 0.6 : 1,
-                    }}
-                  >
-                    Registrar
-                  </button>
-                </div>
+                </Field>
+                <Checkbox
+                  label="Facturable"
+                  checked={timeEntry.billable}
+                  onChange={(e) => setTimeEntry({ ...timeEntry, billable: e.target.checked })}
+                />
+                <Button type="submit" variant="primary" disabled={busy === 'time'}>
+                  {busy === 'time' ? 'Registrando…' : 'Registrar'}
+                </Button>
               </div>
-            </div>
-            {ticket.timeEntries?.length > 0 ? (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: '#f9fafb' }}>
-                    <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Fecha</th>
-                    <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Agente</th>
-                    <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Horas</th>
-                    <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Notas</th>
-                    <th style={{ padding: '10px 16px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' }}>Facturable</th>
+            </form>
+
+            <Table
+              columns={[
+                { key: 'date', label: 'Fecha', width: 130 },
+                { key: 'agent', label: 'Agente', width: 180 },
+                { key: 'notes', label: 'Notas' },
+                { key: 'billable', label: 'Facturable', width: 110 },
+                { key: 'hours', label: 'Horas', align: 'right', width: 100 },
+              ]}
+            >
+              {timeEntries.length === 0 ? (
+                <TableEmpty colSpan={5}>Sin registros de tiempo</TableEmpty>
+              ) : (
+                timeEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td className="trn-muted trn-nowrap">{formatDate(entry.work_date)}</td>
+                    <td>{entry.users?.full_name || '—'}</td>
+                    <td><div className="trn-truncate">{entry.notes || '—'}</div></td>
+                    <td>
+                      <Badge tone={entry.billable ? 'success' : 'neutral'}>{entry.billable ? 'Sí' : 'No'}</Badge>
+                    </td>
+                    <td className="num t-strong">{formatHours(entry.hours)}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {ticket.timeEntries.map((entry, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                      <td style={{ padding: '10px 16px', fontSize: 13, color: '#374151' }}>
-                        {entry.work_date ? new Date(entry.work_date).toLocaleDateString('es-MX') : '—'}
-                      </td>
-                      <td style={{ padding: '10px 16px', fontSize: 13, color: '#374151' }}>
-                        {entry.users?.full_name || '—'}
-                      </td>
-                      <td style={{ padding: '10px 16px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#111' }}>
-                        {Number(entry.hours).toFixed(2)}h
-                      </td>
-                      <td style={{ padding: '10px 16px', fontSize: 13, color: '#6b7280', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {entry.notes || '—'}
-                      </td>
-                      <td style={{ padding: '10px 16px', textAlign: 'center' }}>
-                        <span style={{
-                          padding: '2px 8px',
-                          borderRadius: 8,
-                          fontSize: 11,
-                          fontWeight: 600,
-                          background: entry.billable ? '#dcfce7' : '#f3f4f6',
-                          color: entry.billable ? '#166534' : '#6b7280',
-                        }}>
-                          {entry.billable ? 'Sí' : 'No'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
-                Sin registros de tiempo
-              </div>
-            )}
-          </div>
+                ))
+              )}
+            </Table>
+          </Card>
         </div>
 
-        <div>
-          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: 20, marginBottom: 20 }}>
-            <h3 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 600, color: '#111' }}>Gestión del ticket</h3>
-
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Estado</label>
-              <select
-                value={ticket.status}
-                onChange={(e) => handleUpdateField('status', e.target.value)}
-                style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' }}
-              >
-                {statusOptions.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-              </select>
+        <div className="trn-stack">
+          <Card title="Gestión">
+            <div className="trn-stack" style={{ gap: 14 }}>
+              <Field label="Estado" htmlFor="f-status">
+                <Select
+                  id="f-status"
+                  value={ticket.status}
+                  onChange={(e) => updateField('status', 'status', e.target.value)}
+                  options={optionsOf(TICKET_STATUS)}
+                />
+              </Field>
+              <Field label="Prioridad" htmlFor="f-priority">
+                <Select
+                  id="f-priority"
+                  value={ticket.priority}
+                  onChange={(e) => updateField('priority', 'priority', e.target.value)}
+                  options={optionsOf(TICKET_PRIORITY)}
+                />
+              </Field>
+              <Field label="Tipo" htmlFor="f-type">
+                <Select
+                  id="f-type"
+                  value={ticket.type}
+                  onChange={(e) => updateField('type', 'type', e.target.value)}
+                  options={optionsOf(TICKET_TYPE)}
+                />
+              </Field>
+              <Field label="Asignado a" htmlFor="f-assignee">
+                <Select
+                  id="f-assignee"
+                  value={ticket.assigned_to ?? ''}
+                  onChange={(e) => updateField('assignedTo', 'assigned_to', e.target.value)}
+                  placeholder="Sin asignar"
+                  options={agents.map((a) => ({ value: String(a.id), label: a.full_name || a.email }))}
+                />
+              </Field>
             </div>
+          </Card>
 
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Prioridad</label>
-              <select
-                value={ticket.priority}
-                onChange={(e) => handleUpdateField('priority', e.target.value)}
-                style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' }}
-              >
-                {priorityOptions.map((p) => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Asignar a</label>
-              <select
-                value={ticket.assigned_to || ''}
-                onChange={(e) => handleUpdateField('assignedTo', e.target.value)}
-                style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' }}
-              >
-                <option value="">Sin asignar</option>
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>{a.full_name || a.email}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: 20 }}>
-            <h3 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 600, color: '#111' }}>Información</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 2 }}>Cliente</div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>{ticket.clientName || '—'}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 2 }}>Tipo</div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#111', textTransform: 'capitalize' }}>
-                  {typeLabels[ticket.type] || ticket.type || '—'}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 2 }}>Creado por</div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>{ticket.creatorName || '—'}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 2 }}>Fecha de creación</div>
-                <div style={{ fontSize: 13, color: '#374151' }}>
-                  {ticket.created_at ? new Date(ticket.created_at).toLocaleString('es-MX') : '—'}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 2 }}>Última actualización</div>
-                <div style={{ fontSize: 13, color: '#374151' }}>
-                  {ticket.updated_at ? new Date(ticket.updated_at).toLocaleString('es-MX') : '—'}
-                </div>
-              </div>
-              {ticket.timeEntries?.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 2 }}>Total horas</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>
-                    {ticket.timeEntries.reduce((sum, e) => sum + Number(e.hours || 0), 0).toFixed(2)}h
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          <Card title="Información">
+            <DefinitionList
+              items={[
+                { label: 'Cliente', value: ticket.clientName },
+                { label: 'Núm. de cliente', value: ticket.clientNumber },
+                { label: 'Creado por', value: ticket.creatorName },
+                { label: 'Correo de contacto', value: ticket.creatorEmail },
+                { label: 'Creado', value: formatDateTime(ticket.created_at) },
+                { label: 'Resuelto', value: ticket.resolved_at ? formatDateTime(ticket.resolved_at) : 'En curso' },
+                { label: 'Horas registradas', value: formatHours(totalHours) },
+              ]}
+            />
+          </Card>
         </div>
       </div>
-    </div>
+    </>
   );
 }

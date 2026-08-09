@@ -1,145 +1,147 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
+import {
+  Alert, Badge, Button, Card, Field, Input, Loading, PageHeader, Stat, Table, TableEmpty,
+} from '../../components/ui';
+import { LEDGER_TYPE, describe, formatDate, formatHours, formatPeriod } from '../../lib/domain';
 
-const badgeColor = {
-  allocation: '#10b981',
-  consumption: '#ef4444',
-  adjustment: '#8b5cf6',
-  rollover: '#3b82f6',
-};
-
-const badgeLabel = {
-  allocation: 'Asignación',
-  consumption: 'Consumo',
-  adjustment: 'Ajuste',
-  rollover: 'Acumulado',
-};
+/** Group ledger rows by period, newest first, with a running balance per period. */
+function groupByPeriod(entries) {
+  const map = new Map();
+  for (const entry of entries) {
+    const key = entry.period || 'sin-periodo';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(entry);
+  }
+  return [...map.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([period, rows]) => ({
+      period,
+      rows,
+      allocated: rows.filter((r) => r.type !== 'consumption').reduce((s, r) => s + Number(r.hours || 0), 0),
+      consumed: rows.filter((r) => r.type === 'consumption').reduce((s, r) => s + Math.abs(Number(r.hours || 0)), 0),
+      balance: rows.reduce((s, r) => s + Number(r.hours || 0), 0),
+    }));
+}
 
 export default function ClientHours() {
   const [ledger, setLedger] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterPeriod, setFilterPeriod] = useState('');
+  const [error, setError] = useState(null);
+  const [period, setPeriod] = useState('');
 
-  useEffect(() => {
-    loadLedger();
-  }, [filterPeriod]);
-
-  async function loadLedger() {
+  const load = useCallback(async (selectedPeriod) => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      const params = {};
-      if (filterPeriod) params.period = filterPeriod;
-      const data = await api.getClientLedger(params);
-      setLedger(data);
+      const data = await api.getClientLedger(selectedPeriod ? { period: selectedPeriod } : {});
+      setLedger(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error('Error loading ledger:', err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  const groupedByPeriod = ledger.reduce((acc, entry) => {
-    if (!acc[entry.period]) acc[entry.period] = [];
-    acc[entry.period].push(entry);
-    return acc;
-  }, {});
+  useEffect(() => { load(period); }, [load, period]);
 
-  const sortedPeriods = Object.keys(groupedByPeriod).sort().reverse();
-
-  function getRunningBalance(entries) {
-    return entries.reduce((sum, e) => sum + Number(e.hours), 0);
-  }
+  const periods = useMemo(() => groupByPeriod(ledger), [ledger]);
+  const totals = useMemo(() => ({
+    allocated: periods.reduce((s, p) => s + p.allocated, 0),
+    consumed: periods.reduce((s, p) => s + p.consumed, 0),
+    balance: periods.reduce((s, p) => s + p.balance, 0),
+  }), [periods]);
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Consumo de Horas</h2>
-        <input
-          type="month"
-          value={filterPeriod}
-          onChange={(e) => setFilterPeriod(e.target.value)}
-          style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 }}
-        />
-      </div>
+    <>
+      <PageHeader
+        title="Consumo de horas"
+        description="Movimientos de tu bolsa de horas: asignaciones mensuales, consumo por ticket y ajustes."
+        actions={
+          <div className="trn-row" style={{ alignItems: 'flex-end' }}>
+            <Field label="Periodo" htmlFor="period">
+              <Input id="period" type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ width: 165 }} />
+            </Field>
+            {period && <Button variant="ghost" onClick={() => setPeriod('')}>Ver todo</Button>}
+          </div>
+        }
+      />
+
+      {error && <Alert tone="danger" title="No pudimos cargar tus horas">{error}</Alert>}
 
       {loading ? (
-        <p style={{ color: '#6b7280' }}>Cargando...</p>
-      ) : sortedPeriods.length === 0 ? (
-        <div style={{ background: '#fff', borderRadius: 14, padding: 40, textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-          <p style={{ color: '#6b7280', margin: 0 }}>No hay registros de horas para mostrar.</p>
-        </div>
+        <Loading label="Cargando movimientos…" />
       ) : (
-        sortedPeriods.map((period) => {
-          const entries = groupedByPeriod[period];
-          const balance = getRunningBalance(entries);
-          const [year, month] = period.split('-');
-          const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-          const periodLabel = `${monthNames[parseInt(month) - 1]} ${year}`;
+        <>
+          <div className="trn-stats" style={{ marginBottom: 20 }}>
+            <Stat label="Horas asignadas" value={formatHours(totals.allocated)} hint={period ? formatPeriod(period) : 'Acumulado histórico'} />
+            <Stat label="Horas consumidas" value={formatHours(totals.consumed)} />
+            <Stat
+              label="Saldo"
+              value={formatHours(totals.balance, { signed: true })}
+              tone={totals.balance < 0 ? 'danger' : 'success'}
+              hint={totals.balance < 0 ? 'Excedente por facturar' : 'A favor'}
+            />
+          </div>
 
-          return (
-            <div key={period} style={{ marginBottom: 32 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1e293b' }}>{periodLabel}</h3>
-                <span style={{
-                  padding: '4px 12px',
-                  borderRadius: 20,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  background: balance >= 0 ? '#dcfce7' : '#fee2e2',
-                  color: balance >= 0 ? '#166534' : '#991b1b',
-                }}>
-                  Saldo: {balance > 0 ? '+' : ''}{Number(balance).toFixed(1)}h
-                </span>
+          {periods.length === 0 ? (
+            <Card>
+              <div className="trn-empty">
+                <p className="trn-empty__title">Sin movimientos</p>
+                <p className="trn-empty__desc">
+                  {period
+                    ? `No hay registros de horas en ${formatPeriod(period)}.`
+                    : 'Todavía no se han registrado horas en tu cuenta.'}
+                </p>
               </div>
-              <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc' }}>
-                      <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 13, fontWeight: 600, color: '#64748b' }}>Tipo</th>
-                      <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 13, fontWeight: 600, color: '#64748b' }}>Descripción</th>
-                      <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 13, fontWeight: 600, color: '#64748b' }}>Ticket</th>
-                      <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#64748b' }}>Horas</th>
-                      <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#64748b' }}>Fecha</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map((entry) => (
-                      <tr key={entry.id} style={{ borderTop: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '12px 16px' }}>
-                          <span style={{
-                            padding: '2px 8px',
-                            borderRadius: 12,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            background: badgeColor[entry.type] + '20',
-                            color: badgeColor[entry.type],
-                          }}>
-                            {badgeLabel[entry.type]}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px 16px', fontSize: 14, color: '#374151' }}>{entry.description}</td>
-                        <td style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280', fontFamily: 'monospace' }}>{entry.ticketFolio || '—'}</td>
-                        <td style={{
-                          padding: '12px 16px',
-                          textAlign: 'right',
-                          fontWeight: 600,
-                          fontSize: 14,
-                          color: Number(entry.hours) >= 0 ? '#10b981' : '#ef4444',
-                        }}>
-                          {Number(entry.hours) > 0 ? '+' : ''}{Number(entry.hours).toFixed(1)}h
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right', fontSize: 13, color: '#6b7280' }}>
-                          {new Date(entry.createdAt).toLocaleDateString('es-MX')}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            </Card>
+          ) : (
+            <div className="trn-stack">
+              {periods.map(({ period: key, rows, balance }) => (
+                <Card
+                  key={key}
+                  title={formatPeriod(key)}
+                  subtitle={`${rows.length} ${rows.length === 1 ? 'movimiento' : 'movimientos'}`}
+                  actions={
+                    <Badge tone={balance < 0 ? 'danger' : 'success'}>
+                      Saldo {formatHours(balance, { signed: true })}
+                    </Badge>
+                  }
+                  flush
+                >
+                  <Table
+                    columns={[
+                      { key: 'date', label: 'Fecha', width: 130 },
+                      { key: 'type', label: 'Tipo', width: 150 },
+                      { key: 'desc', label: 'Concepto' },
+                      { key: 'ticket', label: 'Ticket', width: 150 },
+                      { key: 'hours', label: 'Horas', align: 'right', width: 110 },
+                    ]}
+                  >
+                    {rows.length === 0 ? (
+                      <TableEmpty colSpan={5} />
+                    ) : (
+                      rows.map((entry) => {
+                        const type = describe(LEDGER_TYPE, entry.type);
+                        const value = Number(entry.hours);
+                        return (
+                          <tr key={entry.id}>
+                            <td className="trn-muted trn-nowrap">{formatDate(entry.created_at)}</td>
+                            <td><Badge tone={type.tone}>{type.label}</Badge></td>
+                            <td><div className="trn-truncate">{entry.description || '—'}</div></td>
+                            <td className="t-mono trn-muted">{entry.tickets?.folio || '—'}</td>
+                            <td className={`num ${value < 0 ? 'trn-neg' : 'trn-pos'}`}>{formatHours(value, { signed: true })}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </Table>
+                </Card>
+              ))}
             </div>
-          );
-        })
+          )}
+        </>
       )}
-    </div>
+    </>
   );
 }

@@ -1,17 +1,17 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
-
-const statusColors = {
-  nuevo: { bg: '#dbeafe', text: '#1d4ed8', label: 'Nuevo' },
-  en_analisis: { bg: '#fef9c3', text: '#a16207', label: 'En análisis' },
-  en_progreso: { bg: '#ffedd5', text: '#c2410c', label: 'En progreso' },
-  esperando_cliente: { bg: '#f3e8ff', text: '#7c3aed', label: 'Esperando cliente' },
-  resuelto: { bg: '#dcfce7', text: '#15803d', label: 'Resuelto' },
-  cerrado: { bg: '#f3f4f6', text: '#6b7280', label: 'Cerrado' },
-};
+import {
+  Alert, Badge, Button, Card, EmptyState, Loading, Meter, PageHeader, Stat, Table, TableEmpty,
+} from '../../components/ui';
+import {
+  LEDGER_TYPE, SUBSCRIPTION_STATUS, TICKET_STATUS,
+  describe, formatDate, formatHours, formatMoney, formatPeriod, currentPeriod,
+} from '../../lib/domain';
+import { IconChevronRight, IconPlus } from '../../components/Icons';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -19,198 +19,162 @@ export default function Dashboard() {
   useEffect(() => {
     api.getClientDashboard()
       .then(setData)
-      .catch((err) => setError(err.message || 'Error al cargar datos'))
+      .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>Cargando...</div>;
-  if (error) return <div style={{ padding: 40, textAlign: 'center', color: '#dc2626' }}>{error}</div>;
+  if (loading) return <Loading label="Cargando tu resumen…" />;
+  if (error) return <Alert tone="danger" title="No pudimos cargar tu resumen">{error}</Alert>;
 
-  const sub = data?.subscription || {};
-  const horas = data?.hours || {};
-  const tickets = data?.openTickets || [];
-  const movimientos = data?.recentMovements || [];
+  const subscription = data?.subscription || null;
+  const plan = subscription?.plans || null;
+  const hours = data?.hours || {};
+  const openTickets = data?.openTickets || [];
+  const movements = data?.recentMovements || [];
 
-  const porcentaje = horas.allocated > 0
-    ? Math.round((horas.consumed / horas.allocated) * 100)
-    : 0;
+  const allocated = Number(hours.allocated) || 0;
+  const consumed = Number(hours.consumed) || 0;
+  const available = Number(hours.available) || 0;
+  const usage = allocated > 0 ? Math.round((consumed / allocated) * 100) : 0;
 
   return (
-    <div style={styles.page}>
-      <h1 style={styles.title}>Dashboard</h1>
+    <>
+      <PageHeader
+        eyebrow={formatPeriod(currentPeriod())}
+        title="Resumen"
+        description="Estado de tu plan, horas del periodo en curso y tickets abiertos."
+        actions={
+          <Button as={Link} to="/portal/tickets/nuevo" variant="primary">
+            <IconPlus size={15} color="currentColor" />
+            Nuevo ticket
+          </Button>
+        }
+      />
 
-      <div style={styles.grid}>
-        {/* Plan actual */}
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Plan Actual</h3>
-          <div style={styles.planName}>{sub.planName || 'Sin plan'}</div>
-          <div style={styles.planPrice}>{sub.planPrice ? `$${Number(sub.planPrice).toLocaleString('es-MX')}` : '$0'}</div>
-          <div style={styles.planDetail}>
-            Próxima renovación: <strong>{sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString('es-MX') : 'N/A'}</strong>
-          </div>
-        </div>
-
-        {/* Consumo de horas */}
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Consumo de Horas</h3>
-          <div style={styles.hoursGrid}>
-            <div style={styles.hourItem}>
-              <span style={styles.hourLabel}>Asignadas</span>
-              <span style={styles.hourValue}>{horas.allocated || 0}</span>
-            </div>
-            <div style={styles.hourItem}>
-              <span style={styles.hourLabel}>Consumidas</span>
-              <span style={{ ...styles.hourValue, color: '#dc2626' }}>{horas.consumed || 0}</span>
-            </div>
-            <div style={styles.hourItem}>
-              <span style={styles.hourLabel}>Disponibles</span>
-              <span style={{ ...styles.hourValue, color: '#16a34a' }}>{horas.available || 0}</span>
-            </div>
-          </div>
-          <div style={styles.progressBar}>
-            <div style={{
-              ...styles.progressFill,
-              width: `${Math.min(porcentaje, 100)}%`,
-              background: porcentaje > 90 ? '#dc2626' : porcentaje > 70 ? '#f59e0b' : '#2563eb',
-            }} />
-          </div>
-          <div style={styles.progressLabel}>{porcentaje}% utilizado</div>
-        </div>
+      <div className="trn-stats" style={{ marginBottom: 16 }}>
+        <Stat label="Horas asignadas" value={formatHours(allocated)} hint={plan ? plan.name : 'Sin plan activo'} />
+        <Stat label="Horas consumidas" value={formatHours(consumed)} hint={`${usage}% del periodo`} tone={usage >= 100 ? 'danger' : usage >= 80 ? 'warn' : undefined} />
+        <Stat label="Horas disponibles" value={formatHours(available)} tone={available < 0 ? 'danger' : 'success'} hint={available < 0 ? 'Excedente por facturar' : 'Disponibles este mes'} />
+        <Stat label="Tickets abiertos" value={openTickets.length} hint={openTickets.length === 1 ? '1 en curso' : `${openTickets.length} en curso`} />
       </div>
 
-      {/* Tickets abiertos */}
-      <div style={{ ...styles.card, marginTop: 24 }}>
-        <div style={styles.sectionHeader}>
-          <h3 style={styles.cardTitle}>Tickets Abiertos</h3>
-          <Link to="/portal/tickets" style={styles.viewAll}>Ver todos →</Link>
-        </div>
-        {tickets.length === 0 ? (
-          <div style={styles.empty}>No hay tickets abiertos</div>
-        ) : (
-          <div style={styles.ticketList}>
-            {tickets.map((t) => (
-              <Link
-                key={t.id}
-                to={`/portal/tickets/${t.id}`}
-                style={styles.ticketItem}
-              >
-                <div style={styles.ticketFolio}>#{t.folio}</div>
-                <div style={styles.ticketTitle}>{t.title}</div>
-                <span style={{
-                  ...styles.badge,
-                  background: statusColors[t.status]?.bg || '#f3f4f6',
-                  color: statusColors[t.status]?.text || '#6b7280',
-                }}>
-                  {statusColors[t.status]?.label || t.status}
-                </span>
-              </Link>
-            ))}
+      <div className="trn-grid trn-grid--2" style={{ marginBottom: 16 }}>
+        <Card
+          title="Plan contratado"
+          actions={<Button as={Link} to="/portal/plan" variant="ghost" size="sm">Ver detalle <IconChevronRight size={14} color="currentColor" /></Button>}
+        >
+          {plan ? (
+            <>
+              <div className="trn-row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 600 }}>{plan.name}</div>
+                  <div className="trn-muted" style={{ fontSize: 13 }}>
+                    {Number(plan.dev_hours_monthly) > 0 ? `${plan.dev_hours_monthly} h de desarrollo al mes` : 'Sin bolsa de horas'}
+                  </div>
+                </div>
+                <Badge tone={describe(SUBSCRIPTION_STATUS, subscription.status).tone} dot>
+                  {describe(SUBSCRIPTION_STATUS, subscription.status).label}
+                </Badge>
+              </div>
+              <div className="trn-metagrid">
+                <div>
+                  <div className="trn-dl__k">Importe</div>
+                  <div className="trn-dl__v trn-num">{formatMoney(plan.base_price)}</div>
+                </div>
+                <div>
+                  <div className="trn-dl__k">Próxima renovación</div>
+                  <div className="trn-dl__v">{formatDate(subscription.current_period_end)}</div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <EmptyState
+              title="Sin plan activo"
+              description="Aún no tienes un plan asignado. Contacta a tu ejecutivo para activarlo."
+            />
+          )}
+        </Card>
+
+        <Card title="Consumo del periodo" subtitle={formatPeriod(currentPeriod())}>
+          <div className="trn-row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+            <span style={{ fontSize: 24, fontWeight: 620, letterSpacing: '-0.03em' }} className="trn-num">
+              {consumed.toFixed(1)}
+              <span className="trn-muted" style={{ fontSize: 15, fontWeight: 500 }}> / {allocated.toFixed(1)} h</span>
+            </span>
+            <Badge tone={usage >= 100 ? 'danger' : usage >= 80 ? 'warn' : 'success'}>{usage}% utilizado</Badge>
           </div>
-        )}
+          <Meter value={consumed} max={allocated} />
+          <p className="trn-muted" style={{ fontSize: 12.5, marginTop: 10 }}>
+            {available < 0
+              ? `Has excedido tu bolsa en ${Math.abs(available).toFixed(1)} h. Las horas extra se facturan por separado.`
+              : `Te quedan ${available.toFixed(1)} h disponibles en este periodo.`}
+          </p>
+        </Card>
       </div>
 
-      {/* Movimientos recientes */}
-      <div style={{ ...styles.card, marginTop: 24 }}>
-        <h3 style={styles.cardTitle}>Movimientos Recientes de Horas</h3>
-        {movimientos.length === 0 ? (
-          <div style={styles.empty}>No hay movimientos recientes</div>
-        ) : (
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Fecha</th>
-                <th style={styles.th}>Descripción</th>
-                <th style={styles.th}>Tipo</th>
-                <th style={{ ...styles.th, textAlign: 'right' }}>Horas</th>
-              </tr>
-            </thead>
-            <tbody>
-              {movimientos.map((m, i) => (
-                <tr key={i}>
-                  <td style={styles.td}>{m.createdAt ? new Date(m.createdAt).toLocaleDateString('es-MX') : '—'}</td>
-                  <td style={styles.td}>{m.description}</td>
-                  <td style={styles.td}>{m.type}</td>
-                  <td style={{
-                    ...styles.td,
-                    textAlign: 'right',
-                    color: m.type === 'consumption' ? '#dc2626' : '#16a34a',
-                    fontWeight: 600,
-                  }}>
-                    {Number(m.hours) >= 0 ? '+' : ''}{Number(m.hours).toFixed(1)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+      <div className="trn-stack">
+        <Card
+          title="Tickets abiertos"
+          flush
+          actions={<Button as={Link} to="/portal/tickets" variant="ghost" size="sm">Ver todos <IconChevronRight size={14} color="currentColor" /></Button>}
+        >
+          <Table
+            columns={[
+              { key: 'folio', label: 'Folio', width: 150 },
+              { key: 'title', label: 'Asunto' },
+              { key: 'status', label: 'Estado', width: 170 },
+              { key: 'created', label: 'Creado', width: 130 },
+            ]}
+          >
+            {openTickets.length === 0 ? (
+              <TableEmpty colSpan={4}>No tienes tickets abiertos</TableEmpty>
+            ) : (
+              openTickets.map((t) => {
+                const status = describe(TICKET_STATUS, t.status);
+                return (
+                  <tr key={t.id} className="is-clickable" onClick={() => navigate(`/portal/tickets/${t.id}`)}>
+                    <td className="t-mono">{t.folio}</td>
+                    <td className="t-strong"><div className="trn-truncate">{t.title}</div></td>
+                    <td><Badge tone={status.tone} dot>{status.label}</Badge></td>
+                    <td className="trn-muted trn-nowrap">{formatDate(t.created_at)}</td>
+                  </tr>
+                );
+              })
+            )}
+          </Table>
+        </Card>
+
+        <Card title="Movimientos recientes de horas" flush>
+          <Table
+            columns={[
+              { key: 'date', label: 'Fecha', width: 130 },
+              { key: 'type', label: 'Tipo', width: 150 },
+              { key: 'desc', label: 'Concepto' },
+              { key: 'hours', label: 'Horas', align: 'right', width: 110 },
+            ]}
+          >
+            {movements.length === 0 ? (
+              <TableEmpty colSpan={4}>Todavía no hay movimientos</TableEmpty>
+            ) : (
+              movements.map((m) => {
+                const type = describe(LEDGER_TYPE, m.type);
+                const value = Number(m.hours);
+                return (
+                  <tr key={m.id}>
+                    <td className="trn-muted trn-nowrap">{formatDate(m.created_at)}</td>
+                    <td><Badge tone={type.tone}>{type.label}</Badge></td>
+                    <td>
+                      <div className="trn-truncate">{m.description || '—'}</div>
+                      {m.tickets?.folio && <div className="trn-cellstack__sub trn-mono">{m.tickets.folio}</div>}
+                    </td>
+                    <td className={`num ${value < 0 ? 'trn-neg' : 'trn-pos'}`}>{formatHours(value, { signed: true })}</td>
+                  </tr>
+                );
+              })
+            )}
+          </Table>
+        </Card>
       </div>
-    </div>
+    </>
   );
 }
-
-const styles = {
-  page: { maxWidth: 960, margin: '0 auto', color: '#E6DACA' },
-  title: { fontSize: 24, fontWeight: 700, color: '#E6DACA', margin: '0 0 24px' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 },
-  card: {
-    background: 'rgba(26,46,68,0.5)',
-    backdropFilter: 'blur(24px)',
-    WebkitBackdropFilter: 'blur(24px)',
-    borderRadius: 12,
-    border: '1px solid rgba(196,180,159,0.15)',
-    padding: 24,
-  },
-  cardTitle: { fontSize: 14, fontWeight: 600, color: '#C4B49F', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 16px' },
-  planName: { fontSize: 22, fontWeight: 700, color: '#E6DACA', marginBottom: 4 },
-  planPrice: { fontSize: 28, fontWeight: 700, color: '#60a5fa', marginBottom: 8 },
-  planDetail: { fontSize: 14, color: '#C4B49F' },
-  hoursGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 },
-  hourItem: { textAlign: 'center' },
-  hourLabel: { display: 'block', fontSize: 12, color: '#9ca3af', marginBottom: 4 },
-  hourValue: { fontSize: 22, fontWeight: 700, color: '#E6DACA' },
-  progressBar: { height: 8, background: 'rgba(230,218,202,0.1)', borderRadius: 4, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 4, transition: 'width 0.3s' },
-  progressLabel: { fontSize: 12, color: '#9ca3af', textAlign: 'center', marginTop: 8 },
-  sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  viewAll: { fontSize: 14, color: '#60a5fa', textDecoration: 'none', fontWeight: 500 },
-  empty: { padding: '20px 0', textAlign: 'center', color: '#9ca3af', fontSize: 14 },
-  ticketList: { display: 'flex', flexDirection: 'column', gap: 8 },
-  ticketItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    padding: '12px 16px',
-    background: 'rgba(15,30,45,0.4)',
-    border: '1px solid rgba(196,180,159,0.08)',
-    borderRadius: 8,
-    textDecoration: 'none',
-    color: 'inherit',
-    transition: 'background 0.15s',
-  },
-  ticketFolio: { fontSize: 13, fontWeight: 600, color: '#9ca3af', minWidth: 60 },
-  ticketTitle: { flex: 1, fontSize: 14, color: '#E6DACA', fontWeight: 500 },
-  badge: {
-    fontSize: 12,
-    fontWeight: 600,
-    padding: '3px 10px',
-    borderRadius: 12,
-    whiteSpace: 'nowrap',
-  },
-  table: { width: '100%', borderCollapse: 'collapse' },
-  th: {
-    textAlign: 'left',
-    fontSize: 12,
-    fontWeight: 600,
-    color: '#9ca3af',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    padding: '10px 12px',
-    borderBottom: '2px solid rgba(196,180,159,0.15)',
-  },
-  td: {
-    fontSize: 14,
-    color: '#E6DACA',
-    padding: '10px 12px',
-    borderBottom: '1px solid rgba(196,180,159,0.08)',
-  },
-};

@@ -1,228 +1,111 @@
-import { useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
 import TorrenLogo from '../../components/TorrenLogo';
+import { initials } from '../../lib/domain';
+import {
+  IconChart, IconTicket, IconClock, IconCard, IconLogout, IconMenu, IconX,
+} from '../../components/Icons';
 
-const navItems = [
-  { to: '/portal', label: 'Dashboard', icon: '📊', end: true },
-  { to: '/portal/tickets', label: 'Mis Tickets', icon: '🎫' },
-  { to: '/portal/consumo', label: 'Consumo de Horas', icon: '⏱️' },
-  { to: '/portal/plan', label: 'Mi Plan', icon: '📋' },
+const NAV = [
+  { to: '/portal', label: 'Resumen', Icon: IconChart, end: true },
+  { to: '/portal/tickets', label: 'Tickets', Icon: IconTicket },
+  { to: '/portal/horas', label: 'Consumo de horas', Icon: IconClock },
+  { to: '/portal/plan', label: 'Mi plan', Icon: IconCard },
 ];
 
-export default function PortalLayout() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const [menuOpen, setMenuOpen] = useState(false);
+/** Longest matching nav entry wins, so /portal/tickets/12 still says "Tickets". */
+function currentSection(pathname) {
+  const match = [...NAV]
+    .sort((a, b) => b.to.length - a.to.length)
+    .find((item) => pathname === item.to || pathname.startsWith(`${item.to}/`));
+  return match?.label || 'Portal';
+}
 
+export default function PortalLayout() {
+  const { user, client } = useAuth();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const [navOpen, setNavOpen] = useState(false);
+
+  // Never leave the drawer hanging open after a navigation.
+  useEffect(() => { setNavOpen(false); }, [pathname]);
+
+  const { logout } = useAuth();
   const handleLogout = async () => {
     await logout();
     navigate('/login');
   };
 
-  const styles = {
-    container: {
-      display: 'flex',
-      flexDirection: 'column',
-      minHeight: '100vh',
-      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-      position: 'relative',
-      zIndex: 1,
-    },
-    header: {
-      background: 'rgba(255,255,255,0.9)',
-      backdropFilter: 'blur(10px)',
-      borderBottom: '1px solid #e5e7eb',
-      padding: '0 24px',
-      height: 70,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      position: 'sticky',
-      top: 0,
-      zIndex: 30,
-    },
-    headerLeft: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 32,
-    },
-    logoWrapper: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 2,
-    },
-    nav: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 8,
-    },
-    link: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 8,
-      padding: '8px 12px',
-      borderRadius: 8,
-      textDecoration: 'none',
-      color: '#374151',
-      fontSize: 14,
-      fontWeight: 500,
-      transition: 'background 0.15s, color 0.15s',
-    },
-    linkActive: {
-      background: '#eff6ff',
-      color: '#2563eb',
-      fontWeight: 600,
-    },
-    userInfo: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 16,
-    },
-    userName: {
-      fontSize: 14,
-      color: '#374151',
-      fontWeight: 500,
-      display: 'none',
-    },
-    userAvatar: {
-      width: 36,
-      height: 36,
-      borderRadius: '50%',
-      background: '#2563eb',
-      color: '#fff',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontSize: 14,
-      fontWeight: 600,
-      cursor: 'pointer',
-    },
-    logoutBtn: {
-      padding: '8px 16px',
-      background: '#fef2f2',
-      color: '#dc2626',
-      border: '1px solid #fecaca',
-      borderRadius: 8,
-      fontSize: 13,
-      fontWeight: 500,
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 6,
-    },
-    hamburger: {
-      display: 'none',
-      background: 'none',
-      border: '1px solid #d1d5db',
-      borderRadius: 6,
-      padding: '6px 10px',
-      fontSize: 18,
-      cursor: 'pointer',
-      color: '#374151',
-      marginLeft: 16,
-    },
-    content: {
-      flex: 1,
-      padding: '32px 24px',
-      maxWidth: 1200,
-      margin: '0 auto',
-      width: '100%',
-    },
-    mobileMenu: {
-      display: menuOpen ? 'flex' : 'none',
-      flexDirection: 'column',
-      background: '#fff',
-      borderBottom: '1px solid #e5e7eb',
-      padding: 16,
-      gap: 8,
-    },
-  };
+  const displayName = user?.fullName || user?.email || 'Usuario';
 
   return (
-    <div style={styles.container}>
-      <header style={styles.header}>
-        <div style={styles.headerLeft}>
-          <div style={styles.logoWrapper}>
-            <TorrenLogo variant="horizontal" theme="abisal" height={22} />
-            <span style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-              Portal de Cliente
-            </span>
+    <div className="trn">
+      <div className="trn-shell">
+        {navOpen && <div className="trn-scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />}
+
+        <aside className={`trn-rail${navOpen ? ' trn-rail--open' : ''}`}>
+          <div className="trn-rail__brand">
+            <TorrenLogo variant="horizontal" theme="crema" height={20} />
+            <span className="trn-rail__eyebrow">Portal de cliente</span>
           </div>
-          <nav style={styles.nav} className="desktop-nav">
-            {navItems.map((item) => (
+
+          <nav className="trn-rail__nav" aria-label="Secciones del portal">
+            {NAV.map(({ to, label, Icon, end }) => (
               <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                style={({ isActive }) => ({
-                  ...styles.link,
-                  ...(isActive ? styles.linkActive : {}),
-                })}
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) => `trn-navlink${isActive ? ' trn-navlink--active' : ''}`}
               >
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
+                <Icon size={17} color="currentColor" />
+                {label}
               </NavLink>
             ))}
           </nav>
-        </div>
 
-        <div style={styles.userInfo}>
-          <span style={styles.userName} className="desktop-user">{user?.nombre || user?.email || 'Usuario'}</span>
-          <button style={styles.logoutBtn} onClick={handleLogout} className="desktop-logout">
-            <span>🚪</span> Salir
-          </button>
-          <div style={styles.userAvatar}>
-            {(user?.nombre || user?.email || 'U').charAt(0).toUpperCase()}
+          <div className="trn-rail__foot">
+            <div className="trn-identity">
+              <span className="trn-avatar">{initials(displayName)}</span>
+              <div style={{ minWidth: 0 }}>
+                <div className="trn-identity__name">{displayName}</div>
+                <div className="trn-identity__meta">{client?.company_name || 'Cliente'}</div>
+              </div>
+            </div>
+            <button type="button" className="trn-btn trn-btn--secondary trn-btn--sm trn-btn--block" onClick={handleLogout}>
+              <IconLogout size={15} color="currentColor" />
+              Cerrar sesión
+            </button>
           </div>
-          <button
-            style={styles.hamburger}
-            className="mobile-hamburger"
-            onClick={() => setMenuOpen(!menuOpen)}
-          >
-            ☰
-          </button>
+        </aside>
+
+        <div className="trn-main">
+          <header className="trn-topbar">
+            <div className="trn-crumb">
+              <button
+                type="button"
+                className="trn-btn trn-btn--ghost trn-btn--sm trn-burger"
+                onClick={() => setNavOpen((v) => !v)}
+                aria-label={navOpen ? 'Cerrar menú' : 'Abrir menú'}
+                aria-expanded={navOpen}
+              >
+                {navOpen ? <IconX size={18} color="currentColor" /> : <IconMenu size={18} color="currentColor" />}
+              </button>
+              <span className="trn-hide-sm">Portal</span>
+              <span aria-hidden="true" className="trn-hide-sm">/</span>
+              <strong>{currentSection(pathname)}</strong>
+            </div>
+            <div className="trn-row trn-topbar__meta">
+              <span className="trn-muted trn-nowrap trn-hide-sm" style={{ fontSize: 13 }}>{client?.client_number || ''}</span>
+              <span className="trn-avatar trn-avatar--light">{initials(displayName)}</span>
+            </div>
+          </header>
+
+          <main className="trn-content trn-content--narrow">
+            <Outlet />
+          </main>
         </div>
-      </header>
-
-      <div style={styles.mobileMenu} className="mobile-menu-container">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            style={({ isActive }) => ({
-              ...styles.link,
-              ...(isActive ? styles.linkActive : {}),
-            })}
-            onClick={() => setMenuOpen(false)}
-          >
-            <span>{item.icon}</span>
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
-        <button style={{ ...styles.logoutBtn, marginTop: 8, justifyContent: 'center' }} onClick={handleLogout}>
-          <span>🚪</span> Cerrar sesión
-        </button>
       </div>
-
-      <main style={styles.content}>
-        <Outlet />
-      </main>
-
-      <style>{`
-        @media (min-width: 769px) {
-          .desktop-user { display: block !important; }
-        }
-        @media (max-width: 768px) {
-          .desktop-nav { display: none !important; }
-          .desktop-logout { display: none !important; }
-          .mobile-hamburger { display: block !important; }
-        }
-        @media (min-width: 769px) {
-          .mobile-menu-container { display: none !important; }
-        }
-      `}</style>
     </div>
   );
 }

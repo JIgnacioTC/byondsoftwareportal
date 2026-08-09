@@ -1,243 +1,219 @@
-import React, { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import {
+  Alert, Button, Card, Field, Input, Loading, PageHeader, Textarea,
+} from '../../components/ui';
 
 const SECTIONS = [
   {
     key: 'hero',
     label: 'Hero',
+    description: 'Lo primero que ve un visitante al entrar al sitio.',
     fields: [
-      { key: 'label', label: 'Etiqueta superior', type: 'text' },
-      { key: 'heading', label: 'Titulo principal', type: 'text' },
-      { key: 'subtitle', label: 'Subtitulo', type: 'textarea' },
-      { key: 'cta_primary', label: 'CTA primario', type: 'text' },
-      { key: 'cta_secondary', label: 'CTA secundario', type: 'text' },
+      { key: 'label', label: 'Etiqueta superior' },
+      { key: 'heading', label: 'Título principal' },
+      { key: 'subtitle', label: 'Subtítulo', type: 'textarea' },
+      { key: 'cta_primary', label: 'CTA primario' },
+      { key: 'cta_secondary', label: 'CTA secundario' },
     ],
   },
   {
     key: 'process',
     label: 'Proceso',
+    description: 'Los cuatro pasos de cómo trabajamos.',
     fields: [
-      { key: 'heading', label: 'Titulo', type: 'text' },
-      { key: 'subtitle', label: 'Subtitulo', type: 'text' },
-      ...[1, 2, 3, 4].flatMap(i => [
-        { key: `step_0${i}_num`, label: `Paso ${i} - Numero`, type: 'text' },
-        { key: `step_0${i}_title`, label: `Paso ${i} - Titulo`, type: 'text' },
-        { key: `step_0${i}_desc`, label: `Paso ${i} - Descripcion`, type: 'textarea' },
+      { key: 'heading', label: 'Título' },
+      { key: 'subtitle', label: 'Subtítulo' },
+      ...[1, 2, 3, 4].flatMap((i) => [
+        { key: `step_0${i}_num`, label: `Paso ${i} · Número`, group: `Paso ${i}` },
+        { key: `step_0${i}_title`, label: `Paso ${i} · Título`, group: `Paso ${i}` },
+        { key: `step_0${i}_desc`, label: `Paso ${i} · Descripción`, type: 'textarea', group: `Paso ${i}` },
       ]),
     ],
   },
   {
     key: 'why',
-    label: 'Por Que TORREN',
+    label: 'Por qué TORREN',
+    description: 'Diferenciadores frente a la competencia.',
     fields: [
-      { key: 'heading', label: 'Titulo', type: 'text' },
-      { key: 'subtitle', label: 'Subtitulo', type: 'text' },
-      ...[1, 2, 3, 4].flatMap(i => [
-        { key: `item_0${i}_title`, label: `Item ${i} - Titulo`, type: 'text' },
-        { key: `item_0${i}_desc`, label: `Item ${i} - Descripcion`, type: 'textarea' },
+      { key: 'heading', label: 'Título' },
+      { key: 'subtitle', label: 'Subtítulo' },
+      ...[1, 2, 3, 4].flatMap((i) => [
+        { key: `item_0${i}_title`, label: `Punto ${i} · Título`, group: `Punto ${i}` },
+        { key: `item_0${i}_desc`, label: `Punto ${i} · Descripción`, type: 'textarea', group: `Punto ${i}` },
       ]),
     ],
   },
   {
     key: 'services',
     label: 'Servicios',
+    description: 'Encabezado de la sección. Las tarjetas se editan en Servicios.',
     fields: [
-      { key: 'heading', label: 'Titulo', type: 'text' },
-      { key: 'subtitle', label: 'Subtitulo', type: 'text' },
+      { key: 'heading', label: 'Título' },
+      { key: 'subtitle', label: 'Subtítulo' },
     ],
   },
   {
     key: 'pricing',
     label: 'Planes',
+    description: 'Encabezado de la sección. Los planes se editan en Planes.',
     fields: [
-      { key: 'heading', label: 'Titulo', type: 'text' },
-      { key: 'subtitle', label: 'Subtitulo', type: 'text' },
+      { key: 'heading', label: 'Título' },
+      { key: 'subtitle', label: 'Subtítulo' },
     ],
   },
   {
     key: 'cta',
-    label: 'CTA Final',
+    label: 'CTA final',
+    description: 'Cierre de la página, antes del pie.',
     fields: [
-      { key: 'heading', label: 'Titulo', type: 'text' },
-      { key: 'subtitle', label: 'Subtitulo', type: 'textarea' },
-      { key: 'cta_primary', label: 'CTA primario', type: 'text' },
-      { key: 'cta_secondary', label: 'CTA secundario', type: 'text' },
+      { key: 'heading', label: 'Título' },
+      { key: 'subtitle', label: 'Subtítulo', type: 'textarea' },
+      { key: 'cta_primary', label: 'CTA primario' },
+      { key: 'cta_secondary', label: 'CTA secundario' },
     ],
   },
   {
     key: 'stats',
-    label: 'Estadisticas',
+    label: 'Estadísticas',
+    description: 'Cifras que se muestran junto al hero.',
     fields: [
-      { key: 'years_experience', label: 'Anos de experiencia', type: 'text' },
+      { key: 'years_experience', label: 'Años de experiencia' },
     ],
   },
 ];
 
 export default function Contenido() {
   const [content, setContent] = useState({});
+  const [baseline, setBaseline] = useState({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [activeSection, setActiveSection] = useState('hero');
-  const [message, setMessage] = useState('');
+  const [activeKey, setActiveKey] = useState('hero');
 
-  useEffect(() => { loadContent(); }, []);
-
-  async function loadContent() {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
       const data = await api.getAdminContent();
-      setContent(data.grouped || {});
+      const grouped = data?.grouped || {};
+      setContent(grouped);
+      setBaseline(grouped);
     } catch (err) {
-      alert('Error al cargar contenido: ' + err.message);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  function getValue(section, key) {
-    return content[section]?.[key] || '';
-  }
+  useEffect(() => { load(); }, [load]);
 
-  function setValue(section, key, value) {
-    setContent(prev => ({
-      ...prev,
-      [section]: { ...(prev[section] || {}), [key]: value },
-    }));
-  }
+  const section = SECTIONS.find((s) => s.key === activeKey);
+  const getValue = (key) => content[activeKey]?.[key] ?? '';
+  const setValue = (key, value) => setContent((prev) => ({
+    ...prev,
+    [activeKey]: { ...(prev[activeKey] || {}), [key]: value },
+  }));
 
-  async function handleSave() {
+  const isDirty = section?.fields.some((f) => (content[activeKey]?.[f.key] ?? '') !== (baseline[activeKey]?.[f.key] ?? ''));
+
+  const handleSave = async () => {
+    setSaving(true);
+    setNotice(null);
     try {
-      setSaving(true);
-      setMessage('');
-      const items = [];
-      const currentSection = SECTIONS.find(s => s.key === activeSection);
-      if (currentSection) {
-        for (const field of currentSection.fields) {
-          items.push({
-            section: activeSection,
-            key: field.key,
-            value: getValue(activeSection, field.key),
-          });
-        }
-      }
+      const items = section.fields.map((f) => ({ section: activeKey, key: f.key, value: getValue(f.key) }));
       await api.updateAdminContent(items);
-      setMessage('Contenido guardado correctamente');
+      setBaseline((prev) => ({ ...prev, [activeKey]: { ...(content[activeKey] || {}) } }));
+      setNotice({ tone: 'success', text: `Sección "${section.label}" publicada.` });
     } catch (err) {
-      setMessage('Error al guardar: ' + err.message);
+      setNotice({ tone: 'danger', text: err.message });
     } finally {
       setSaving(false);
     }
-  }
+  };
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>Cargando contenido...</div>;
+  const handleDiscard = () => {
+    setContent((prev) => ({ ...prev, [activeKey]: { ...(baseline[activeKey] || {}) } }));
+    setNotice(null);
+  };
 
-  const currentSection = SECTIONS.find(s => s.key === activeSection);
+  if (loading) return <Loading label="Cargando contenido…" />;
+  if (error) return <Alert tone="danger" title="No se pudo cargar el contenido">{error}</Alert>;
 
   return (
-    <div>
-      <h1 style={{ margin: '0 0 24px', fontSize: 24, fontWeight: 700, color: '#111' }}>Editor de Contenido</h1>
+    <>
+      <PageHeader
+        title="Contenido de la landing"
+        description="Los textos se publican en el sitio público en cuanto guardas la sección."
+      />
 
-      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
-        <div style={{ width: 200, flexShrink: 0 }}>
-          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-            {SECTIONS.map(s => (
+      {notice && <Alert tone={notice.tone} onClose={() => setNotice(null)}>{notice.text}</Alert>}
+
+      <div className="trn-grid" style={{ gridTemplateColumns: '220px minmax(0, 1fr)', alignItems: 'start' }}>
+        <Card flush>
+          <nav className="trn-sectionnav" aria-label="Secciones de la landing">
+            {SECTIONS.map((s) => (
               <button
                 key={s.key}
-                onClick={() => setActiveSection(s.key)}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  textAlign: 'left',
-                  fontSize: 14,
-                  fontWeight: activeSection === s.key ? 600 : 400,
-                  background: activeSection === s.key ? '#f0f7ff' : '#fff',
-                  color: activeSection === s.key ? '#2563eb' : '#374151',
-                  border: 'none',
-                  borderBottom: '1px solid #f3f4f6',
-                  cursor: 'pointer',
-                  borderLeft: activeSection === s.key ? '3px solid #2563eb' : '3px solid transparent',
-                }}
+                type="button"
+                aria-current={activeKey === s.key}
+                onClick={() => { setActiveKey(s.key); setNotice(null); }}
               >
                 {s.label}
               </button>
             ))}
+          </nav>
+        </Card>
+
+        <Card
+          title={section.label}
+          subtitle={section.description}
+          footer={
+            <div className="trn-row" style={{ justifyContent: 'space-between' }}>
+              <span className="trn-muted" style={{ fontSize: 12.5 }}>
+                {isDirty ? 'Tienes cambios sin publicar en esta sección.' : 'Todo publicado.'}
+              </span>
+              <div className="trn-row">
+                {isDirty && <Button variant="ghost" onClick={handleDiscard}>Descartar</Button>}
+                <Button variant="primary" onClick={handleSave} disabled={saving || !isDirty}>
+                  {saving ? 'Publicando…' : 'Publicar sección'}
+                </Button>
+              </div>
+            </div>
+          }
+        >
+          <div className="trn-stack">
+            {section.fields.map((field, i) => {
+              const prev = section.fields[i - 1];
+              const showGroup = field.group && field.group !== prev?.group;
+              return (
+                <div key={field.key}>
+                  {showGroup && (
+                    <p className="trn-eyebrow" style={{ marginTop: i === 0 ? 0 : 10 }}>{field.group}</p>
+                  )}
+                  <Field label={field.label} htmlFor={`${activeKey}-${field.key}`}>
+                    {field.type === 'textarea' ? (
+                      <Textarea
+                        id={`${activeKey}-${field.key}`}
+                        rows={3}
+                        value={getValue(field.key)}
+                        onChange={(e) => setValue(field.key, e.target.value)}
+                      />
+                    ) : (
+                      <Input
+                        id={`${activeKey}-${field.key}`}
+                        value={getValue(field.key)}
+                        onChange={(e) => setValue(field.key, e.target.value)}
+                      />
+                    )}
+                  </Field>
+                </div>
+              );
+            })}
           </div>
-        </div>
-
-        <div style={{ flex: 1, background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: 24 }}>
-          <h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 600 }}>{currentSection?.label}</h3>
-
-          {message && (
-            <div style={{
-              padding: 12,
-              borderRadius: 8,
-              marginBottom: 16,
-              background: message.includes('Error') ? '#fee2e2' : '#dcfce7',
-              color: message.includes('Error') ? '#991b1b' : '#166534',
-              fontSize: 13,
-            }}>
-              {message}
-            </div>
-          )}
-
-          {currentSection?.fields.map(field => (
-            <div key={field.key} style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 4 }}>
-                {field.label}
-              </label>
-              {field.type === 'textarea' ? (
-                <textarea
-                  value={getValue(activeSection, field.key)}
-                  onChange={(e) => setValue(activeSection, field.key, e.target.value)}
-                  rows={3}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: 6,
-                    fontSize: 14,
-                    resize: 'vertical',
-                    boxSizing: 'border-box',
-                    fontFamily: 'inherit',
-                  }}
-                />
-              ) : (
-                <input
-                  type="text"
-                  value={getValue(activeSection, field.key)}
-                  onChange={(e) => setValue(activeSection, field.key, e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: 6,
-                    fontSize: 14,
-                    boxSizing: 'border-box',
-                  }}
-                />
-              )}
-            </div>
-          ))}
-
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            style={{
-              padding: '10px 24px',
-              background: '#2563eb',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 8,
-              cursor: saving ? 'not-allowed' : 'pointer',
-              fontSize: 14,
-              fontWeight: 600,
-              opacity: saving ? 0.6 : 1,
-            }}
-          >
-            {saving ? 'Guardando...' : 'Guardar'}
-          </button>
-        </div>
+        </Card>
       </div>
-    </div>
+    </>
   );
 }

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import SlidingBackground from './components/SlidingBackground';
 
@@ -40,24 +40,29 @@ import ServiciosAdmin from './pages/admin/ServiciosAdmin';
 import StripeSuccess from './pages/stripe/Success';
 import StripeCancel from './pages/stripe/Cancel';
 
+/**
+ * The animated marketing backdrop belongs to the public site only — the admin
+ * console and client portal paint their own opaque, light workspace over it.
+ */
+function PublicBackdrop() {
+  const { pathname } = useLocation();
+  if (pathname.startsWith('/admin') || pathname.startsWith('/portal')) return null;
+  return <SlidingBackground />;
+}
+
 function PrivateRoute({ children, roles }) {
   const { user, loading } = useAuth();
 
+  // Matches the light workspace that is about to render, so there is no dark flash.
   if (loading) {
     return (
-      <div style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '100vh',
-        background: '#0F1E2D',
-        color: '#E6DACA',
-        fontFamily: "'Space Grotesk', sans-serif",
-        fontSize: 14,
-        letterSpacing: '0.1em',
-        textTransform: 'uppercase',
-      }}>
-        Cargando...
+      <div className="trn">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+          <div className="trn-loading">
+            <span className="trn-spinner" aria-hidden="true" />
+            Cargando tu sesión…
+          </div>
+        </div>
       </div>
     );
   }
@@ -72,7 +77,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <SlidingBackground />
+        <PublicBackdrop />
         <Routes>
           {/* Public & Auth */}
           <Route path="/" element={<Landing />} />
