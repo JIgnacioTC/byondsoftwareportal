@@ -88,11 +88,22 @@ export function AuthProvider({ children }) {
         user: profile?.user || res.user,
         client: profile?.client || null,
         session: res.session,
+        needsEmailConfirmation: false,
       };
-    } else {
-      // Fallback: try logging in if session wasn't auto-returned
-      return await login(email, password);
     }
+    // No session back means Supabase requires email confirmation before this
+    // account can log in — this is expected, not a failure. Retrying with a
+    // login() here used to surface Supabase's own "Email not confirmed" (or,
+    // worse, "Invalid login credentials") as if the signup itself had failed.
+    // The caller shows a "check your email" screen instead; once the link is
+    // clicked, the onAuthStateChange listener above picks up the new session
+    // automatically (Supabase syncs it across tabs in the same browser).
+    return {
+      user: res.user || null,
+      client: null,
+      session: null,
+      needsEmailConfirmation: true,
+    };
   };
 
   const logout = async () => {

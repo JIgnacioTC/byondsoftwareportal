@@ -81,6 +81,51 @@ const SECTIONS = [
       { key: 'years_experience', label: 'Años de experiencia' },
     ],
   },
+  {
+    key: 'contact',
+    label: 'Contacto',
+    description: 'Datos que se muestran en la página de Contacto.',
+    fields: [
+      { key: 'email', label: 'Correo' },
+      { key: 'phone', label: 'Teléfono' },
+      { key: 'location', label: 'Ubicación' },
+      { key: 'response_time', label: 'Tiempo de respuesta' },
+      { key: 'hours_weekday', label: 'Horario de atención' },
+      { key: 'hours_emergency', label: 'Soporte de emergencia' },
+    ],
+  },
+  {
+    key: 'terms',
+    label: 'Términos y condiciones',
+    description: 'Texto legal publicado en /terminos.',
+    fields: [
+      { key: 'last_updated', label: 'Última actualización' },
+      { key: 'intro', label: 'Párrafo introductorio', type: 'textarea' },
+      {
+        key: 'body',
+        label: 'Contenido',
+        type: 'textarea',
+        rows: 22,
+        hint: 'Usa "## Título" para iniciar una sección nueva y "- " al inicio de una línea para viñetas. Una línea en blanco separa párrafos.',
+      },
+    ],
+  },
+  {
+    key: 'privacy',
+    label: 'Aviso de privacidad',
+    description: 'Texto legal publicado en /privacidad.',
+    fields: [
+      { key: 'last_updated', label: 'Última actualización' },
+      { key: 'intro', label: 'Párrafo introductorio', type: 'textarea' },
+      {
+        key: 'body',
+        label: 'Contenido',
+        type: 'textarea',
+        rows: 22,
+        hint: 'Usa "## Título" para iniciar una sección nueva y "- " al inicio de una línea para viñetas. Una línea en blanco separa párrafos.',
+      },
+    ],
+  },
 ];
 
 export default function Contenido() {
@@ -192,11 +237,11 @@ export default function Contenido() {
                   {showGroup && (
                     <p className="trn-eyebrow" style={{ marginTop: i === 0 ? 0 : 10 }}>{field.group}</p>
                   )}
-                  <Field label={field.label} htmlFor={`${activeKey}-${field.key}`}>
+                  <Field label={field.label} htmlFor={`${activeKey}-${field.key}`} hint={field.hint}>
                     {field.type === 'textarea' ? (
                       <Textarea
                         id={`${activeKey}-${field.key}`}
-                        rows={3}
+                        rows={field.rows || 3}
                         value={getValue(field.key)}
                         onChange={(e) => setValue(field.key, e.target.value)}
                       />

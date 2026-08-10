@@ -92,9 +92,28 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Nombre, email y contraseña son requeridos' });
     }
 
+    const cleanEmail = email.toLowerCase().trim();
+    const db = createAdminClient();
+
+    // Check for an existing account first. Supabase's signUp() intentionally
+    // obfuscates this case (to prevent email-enumeration attacks) by returning
+    // a fake user with no error and no session — which previously fell through
+    // to an auto-login attempt with the *new* password, failing with a
+    // confusing "Invalid login credentials" instead of telling the user their
+    // email is already registered.
+    const { data: existingAppUsers } = await db
+      .from('users')
+      .select('id')
+      .eq('email', cleanEmail)
+      .limit(1);
+
+    if (existingAppUsers && existingAppUsers.length > 0) {
+      return res.status(409).json({ error: 'Este correo ya está registrado. Inicia sesión o recupera tu contraseña.' });
+    }
+
     // Sign up with Supabase Auth
     const { data: authData, error: authError } = await supabaseAdmin.auth.signUp({
-      email,
+      email: cleanEmail,
       password,
       options: {
         data: {
@@ -112,30 +131,46 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'No se pudo crear el usuario' });
     }
 
-    const db = createAdminClient();
-
-    // Check if client exists or create one
-    let clientId = null;
-    if (companyName) {
-      const { data: newClient } = await db
-        .from('clients')
-        .insert({
-          company_name: companyName,
-          contact_name: fullName,
-          contact_email: email,
-          status: 'lead',
-        })
-        .select()
-        .single();
-      if (newClient) clientId = newClient.id;
+    // Fallback for the same obfuscation case: Supabase returns a user with an
+    // empty `identities` array (no error) when the email already has an
+    // account, even if it's not in our own `users` table for some reason.
+    if (Array.isArray(authData.user.identities) && authData.user.identities.length === 0) {
+      return res.status(409).json({ error: 'Este correo ya está registrado. Inicia sesión o recupera tu contraseña.' });
     }
+
+    // Always create a client record — leaving client_id null for
+    // company-less signups used to crash every client-portal endpoint
+    // downstream (Supabase/PostgREST rejects `.eq('client_id', null)`).
+    const { data: lastClients } = await db
+      .from('clients')
+      .select('id')
+      .order('id', { ascending: false })
+      .limit(1);
+    const nextNum = lastClients?.length > 0 ? lastClients[0].id + 1 : 1;
+    const clientNumber = `TRN-${String(nextNum).padStart(4, '0')}`;
+
+    const { data: newClient, error: clientError } = await db
+      .from('clients')
+      .insert({
+        client_number: clientNumber,
+        company_name: companyName || fullName,
+        contact_name: fullName,
+        status: 'prospecto',
+      })
+      .select()
+      .single();
+
+    if (clientError) {
+      console.error('Error creating client record during registration:', clientError);
+    }
+    const clientId = newClient?.id ?? null;
 
     // Create user in public.users
     const { data: newUser, error: newUserError } = await db
       .from('users')
       .insert({
         supabase_uid: authData.user.id,
-        email: email.toLowerCase(),
+        email: cleanEmail,
         full_name: fullName,
         role: 'client_user',
         client_id: clientId,
@@ -152,12 +187,15 @@ router.post('/register', async (req, res) => {
       message: 'Registro exitoso',
       user: newUser || {
         supabaseUid: authData.user.id,
-        email,
+        email: cleanEmail,
         fullName,
         role: 'client_user',
         clientId,
       },
+      // null when email confirmation is required — the client shows a
+      // "check your email" screen instead of treating this as a failed login.
       session: authData.session,
+      needsEmailConfirmation: !authData.session,
     });
   } catch (err) {
     console.error('Register error:', err);

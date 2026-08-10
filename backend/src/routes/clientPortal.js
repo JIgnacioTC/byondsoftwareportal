@@ -5,6 +5,21 @@ import { requireRole } from '../middleware/auth.js';
 const router = Router();
 router.use(requireRole('client_user'));
 
+// A client_user with no linked client_id would otherwise crash every route
+// below: Supabase/PostgREST rejects `.eq('client_id', null)` with a raw
+// Postgres error ("invalid input syntax for type integer") instead of
+// matching NULL, so every query here threw a 500. Fail with one clear,
+// actionable message instead of letting each route hit that error differently.
+router.use((req, res, next) => {
+  if (!req.user.client_id) {
+    return res.status(409).json({
+      error: 'Tu cuenta todavía no está vinculada a una empresa. Contacta a soporte para completar tu alta.',
+      code: 'NO_CLIENT_LINKED',
+    });
+  }
+  next();
+});
+
 // Helper to get client ID from user
 function getClientId(req) {
   return req.user.client_id;

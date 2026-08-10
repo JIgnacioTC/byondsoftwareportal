@@ -13,6 +13,7 @@ import adminPlansRoutes from './routes/adminPlans.js';
 import adminTicketsRoutes from './routes/adminTickets.js';
 import adminDashboardRoutes from './routes/adminDashboard.js';
 import adminContentRoutes from './routes/adminContent.js';
+import adminMessagesRoutes from './routes/adminMessages.js';
 import clientPortalRoutes from './routes/clientPortal.js';
 import stripeRoutes from './routes/stripe.js';
 
@@ -52,6 +53,7 @@ app.use('/api/admin/users', adminUsersRoutes);
 app.use('/api/admin/plans', adminPlansRoutes);
 app.use('/api/admin/tickets', adminTicketsRoutes);
 app.use('/api/admin/content', adminContentRoutes);
+app.use('/api/admin/messages', adminMessagesRoutes);
 app.use('/api/admin', adminDashboardRoutes);
 
 // Client portal routes

@@ -11,13 +11,37 @@ export default function Login() {
   const [mode, setMode] = useState(initialMode); // 'login' | 'signup'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
 
-  const { login, register } = useAuth();
+  const { login, register, user } = useAuth();
   const navigate = useNavigate();
+
+  function goToDestination(currentUser) {
+    if (planParam) {
+      navigate(`/?plan=${planParam}#planes`);
+    } else if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'agent')) {
+      navigate('/admin');
+    } else {
+      navigate('/portal');
+    }
+  }
+
+  // While waiting on the confirmation screen, AuthContext's onAuthStateChange
+  // listener picks up a session as soon as it exists — including one created
+  // by clicking the confirmation link in another tab of the same browser
+  // (Supabase syncs sessions across same-origin tabs via localStorage). Once
+  // `user` appears, move on instead of leaving the visitor stuck waiting.
+  useEffect(() => {
+    if (awaitingConfirmation && user) {
+      goToDestination(user);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [awaitingConfirmation, user]);
 
   useEffect(() => {
     if (searchParams.get('mode') === 'signup') {
@@ -30,26 +54,24 @@ export default function Login() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+
+    if (mode === 'signup' && password !== confirmPassword) {
+      setError('Las contraseñas no coinciden.');
+      return;
+    }
+
     setLoading(true);
 
     try {
       if (mode === 'login') {
         const data = await login(email, password);
-        if (planParam) {
-          navigate(`/?plan=${planParam}#planes`);
-        } else if (data.user && (data.user.role === 'admin' || data.user.role === 'agent')) {
-          navigate('/admin');
-        } else {
-          navigate('/portal');
-        }
+        goToDestination(data.user);
       } else {
         const data = await register(email, password, fullName, companyName);
-        if (planParam) {
-          navigate(`/?plan=${planParam}#planes`);
-        } else if (data.user && (data.user.role === 'admin' || data.user.role === 'agent')) {
-          navigate('/admin');
+        if (data.needsEmailConfirmation) {
+          setAwaitingConfirmation(true);
         } else {
-          navigate('/portal');
+          goToDestination(data.user);
         }
       }
     } catch (err) {
@@ -93,6 +115,59 @@ export default function Login() {
           </p>
         </div>
 
+        {awaitingConfirmation ? (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: '50%',
+              background: 'rgba(230,218,202,0.1)',
+              border: '1px solid rgba(230,218,202,0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 20px',
+              fontSize: 24,
+            }}>
+              ✉️
+            </div>
+            <h2 style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: 18,
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: '#E6DACA',
+              marginBottom: 12,
+            }}>
+              Revisa tu correo
+            </h2>
+            <p style={{ color: '#C4B49F', fontSize: 14, lineHeight: 1.6, marginBottom: 8 }}>
+              Enviamos un enlace de confirmación a <strong style={{ color: '#E6DACA' }}>{email}</strong>.
+            </p>
+            <p style={{ color: '#C4B49F', fontSize: 14, lineHeight: 1.6, marginBottom: 28 }}>
+              Ábrelo para activar tu cuenta — esta pantalla te llevará a tu perfil automáticamente en cuanto lo confirmes.
+            </p>
+            <div style={{
+              width: 28,
+              height: 28,
+              border: '3px solid rgba(230,218,202,0.2)',
+              borderTopColor: '#E6DACA',
+              borderRadius: '50%',
+              margin: '0 auto 24px',
+              animation: 'trn-login-spin 1s linear infinite',
+            }} />
+            <style>{`@keyframes trn-login-spin { to { transform: rotate(360deg); } }`}</style>
+            <button
+              type="button"
+              onClick={() => { setAwaitingConfirmation(false); setMode('login'); setError(''); }}
+              style={{ background: 'none', border: 'none', color: '#C4B49F', fontSize: 13, cursor: 'pointer' }}
+            >
+              ← Volver al inicio de sesión
+            </button>
+          </div>
+        ) : (
+        <>
         {/* Mode switcher tabs */}
         <div style={{
           display: 'flex',
@@ -206,6 +281,21 @@ export default function Login() {
             style={inputStyle}
           />
 
+          {mode === 'signup' && (
+            <>
+              <label style={labelStyle}>Confirmar contraseña *</label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                style={inputStyle}
+              />
+            </>
+          )}
+
           {error && (
             <p style={{
               fontSize: 13,
@@ -247,6 +337,8 @@ export default function Login() {
             ← Volver al inicio
           </Link>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

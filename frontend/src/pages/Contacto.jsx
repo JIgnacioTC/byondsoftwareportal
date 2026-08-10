@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
@@ -91,27 +91,40 @@ const S = {
   },
 };
 
+// Mirrors the real plan categories from the pricing section instead of a
+// generic, disconnected list — picking one here routes the lead to the same
+// language used on /#planes.
 const serviceOptions = [
-  'Desarrollo de Software a Medida',
-  'Soporte Técnico y Mantenimiento',
-  'Monitoreo 24/7',
-  'Respaldo y Recuperación de Datos',
-  'Consultoría Tecnológica',
-  'Otro',
+  'Hosting & Care',
+  'TORREN Build (desarrollo)',
+  'TORREN Accelerated (desarrollo con IA)',
+  'Proyectos & MVP',
+  'Solución Empresarial',
+  'Otro / no estoy seguro',
 ];
 
+const emptyForm = {
+  nombre: '',
+  empresa: '',
+  email: '',
+  telefono: '',
+  servicio: '',
+  mensaje: '',
+};
+
 export default function Contacto() {
-  const [form, setForm] = useState({
-    nombre: '',
-    empresa: '',
-    email: '',
-    telefono: '',
-    servicio: '',
-    mensaje: '',
-  });
+  const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [content, setContent] = useState({});
+
+  useEffect(() => {
+    fetch('/api/public/content')
+      .then((r) => r.json())
+      .then((data) => setContent(data?.contact || {}))
+      .catch(() => {});
+  }, []);
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -126,10 +139,13 @@ export default function Contacto() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyName: form.empresa,
+          companyName: form.empresa || form.nombre,
           contactName: form.nombre,
           email: form.email,
-          planSlug: form.servicio || 'consulta-general',
+          phone: form.telefono,
+          service: form.servicio,
+          message: form.mensaje,
+          planSlug: 'consulta-general',
         }),
       });
       if (!res.ok) throw new Error('Error');
@@ -188,7 +204,7 @@ export default function Contacto() {
                   <p style={{ color: '#C4B49F', lineHeight: 1.7, marginBottom: 32 }}>
                     Gracias por contactarnos. Nuestro equipo se pondra en contacto contigo pronto.
                   </p>
-                  <button onClick={() => { setSuccess(false); setForm({ nombre: '', empresa: '', email: '', telefono: '', servicio: '', mensaje: '' }); }} className="btn-cta">
+                  <button onClick={() => { setSuccess(false); setForm(emptyForm); }} className="btn-cta">
                     Enviar otro mensaje
                   </button>
                 </div>
@@ -321,7 +337,7 @@ export default function Contacto() {
                     display: 'block',
                     marginBottom: 6,
                   }}>Correo</span>
-                  <span style={{ fontSize: 15, color: '#E6DACA' }}>contacto@torren.dev</span>
+                  <span style={{ fontSize: 15, color: '#E6DACA' }}>{content.email || 'contacto@torren.dev'}</span>
                 </div>
               </div>
 
@@ -352,7 +368,7 @@ export default function Contacto() {
                     display: 'block',
                     marginBottom: 6,
                   }}>Telefono</span>
-                  <span style={{ fontSize: 15, color: '#E6DACA' }}>+52 XX XXXX XXXX</span>
+                  <span style={{ fontSize: 15, color: '#E6DACA' }}>{content.phone || '+52 XX XXXX XXXX'}</span>
                 </div>
               </div>
 
@@ -383,7 +399,7 @@ export default function Contacto() {
                     display: 'block',
                     marginBottom: 6,
                   }}>Ubicacion</span>
-                  <span style={{ fontSize: 15, color: '#E6DACA' }}>Ciudad de Mexico, Mexico</span>
+                  <span style={{ fontSize: 15, color: '#E6DACA' }}>{content.location || 'Ciudad de Mexico, Mexico'}</span>
                 </div>
               </div>
 
@@ -414,7 +430,7 @@ export default function Contacto() {
                     display: 'block',
                     marginBottom: 6,
                   }}>Tiempo de respuesta</span>
-                  <span style={{ fontSize: 15, color: '#E6DACA' }}>Menos de 24 horas habiles</span>
+                  <span style={{ fontSize: 15, color: '#E6DACA' }}>{content.response_time || 'Menos de 24 horas habiles'}</span>
                 </div>
               </div>
 
@@ -435,8 +451,8 @@ export default function Contacto() {
                   marginBottom: 8,
                 }}>Horario de atencion</p>
                 <p style={{ fontSize: 14, color: '#C4B49F', lineHeight: 1.6 }}>
-                  Lunes a Viernes: 9:00 - 18:00 (CST)<br />
-                  Soporte de emergencia: 24/7
+                  {content.hours_weekday || 'Lunes a Viernes: 9:00 - 18:00 (CST)'}<br />
+                  {content.hours_emergency || 'Soporte de emergencia: 24/7'}
                 </p>
               </div>
             </div>

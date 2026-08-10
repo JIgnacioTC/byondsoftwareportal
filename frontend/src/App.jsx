@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import SlidingBackground from './components/SlidingBackground';
@@ -36,6 +37,7 @@ import TicketsAdmin from './pages/admin/TicketsAdmin';
 import TicketDetailAdmin from './pages/admin/TicketDetailAdmin';
 import AdminReports from './pages/admin/Reports';
 import Contenido from './pages/admin/Contenido';
+import Mensajes from './pages/admin/Mensajes';
 import ServiciosAdmin from './pages/admin/ServiciosAdmin';
 import StripeSuccess from './pages/stripe/Success';
 import StripeCancel from './pages/stripe/Cancel';
@@ -48,6 +50,20 @@ function PublicBackdrop() {
   const { pathname } = useLocation();
   if (pathname.startsWith('/admin') || pathname.startsWith('/portal')) return null;
   return <SlidingBackground />;
+}
+
+/**
+ * BrowserRouter (non-data mode) has no built-in <ScrollRestoration />, so every
+ * client-side navigation kept whatever scroll position the previous page was
+ * at — a link near the bottom of a page landed you at the bottom of the next
+ * one too. Force every route change to start at the top, like a normal page load.
+ */
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
 }
 
 function PrivateRoute({ children, roles }) {
@@ -77,6 +93,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ScrollToTop />
         <PublicBackdrop />
         <Routes>
           {/* Public & Auth */}
@@ -128,6 +145,7 @@ export default function App() {
             <Route path="tickets/:id" element={<TicketDetailAdmin />} />
             <Route path="reportes" element={<AdminReports />} />
             <Route path="contenido" element={<Contenido />} />
+            <Route path="mensajes" element={<Mensajes />} />
             <Route path="servicios" element={<ServiciosAdmin />} />
           </Route>
 

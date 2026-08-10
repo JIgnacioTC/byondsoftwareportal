@@ -120,6 +120,8 @@ export const api = {
   updateAdminService: (slug, data) => request(`/admin/content/services/${slug}`, { method: 'PUT', body: JSON.stringify(data) }),
   createAdminService: (data) => request('/admin/content/services', { method: 'POST', body: JSON.stringify(data) }),
   deleteAdminService: (slug) => request(`/admin/content/services/${slug}`, { method: 'DELETE' }),
+  getAdminMessages: () => request('/admin/messages'),
+  updateAdminMessageStatus: (id, status) => request(`/admin/messages/${id}`, { method: 'PUT', body: JSON.stringify({ status }) }),
 
   // Stripe
   createPortalSession: (clientId) => request('/stripe/portal-session', { method: 'POST', body: JSON.stringify({ clientId }) }),

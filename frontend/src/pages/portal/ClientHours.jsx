@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import {
-  Alert, Badge, Button, Card, Field, Input, Loading, PageHeader, Stat, Table, TableEmpty,
+  Alert, Badge, Card, Field, Loading, PageHeader, Select, Stat, Table, TableEmpty,
 } from '../../components/ui';
 import { LEDGER_TYPE, describe, formatDate, formatHours, formatPeriod } from '../../lib/domain';
 
@@ -30,11 +30,16 @@ export default function ClientHours() {
   const [error, setError] = useState(null);
   const [period, setPeriod] = useState('');
 
-  const load = useCallback(async (selectedPeriod) => {
+  // Fetched once, unfiltered — the period dropdown only ever lists periods
+  // that actually have movements, and switching periods is an instant
+  // client-side filter instead of a native <input type="month"> (which let
+  // you "select" any month, including ones with no data, and round-tripped
+  // to the server on every change).
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getClientLedger(selectedPeriod ? { period: selectedPeriod } : {});
+      const data = await api.getClientLedger();
       setLedger(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err.message);
@@ -43,14 +48,23 @@ export default function ClientHours() {
     }
   }, []);
 
-  useEffect(() => { load(period); }, [load, period]);
+  useEffect(() => { load(); }, [load]);
 
-  const periods = useMemo(() => groupByPeriod(ledger), [ledger]);
+  const allPeriods = useMemo(() => groupByPeriod(ledger), [ledger]);
+  const periods = useMemo(
+    () => (period ? allPeriods.filter((p) => p.period === period) : allPeriods),
+    [allPeriods, period]
+  );
   const totals = useMemo(() => ({
     allocated: periods.reduce((s, p) => s + p.allocated, 0),
     consumed: periods.reduce((s, p) => s + p.consumed, 0),
     balance: periods.reduce((s, p) => s + p.balance, 0),
   }), [periods]);
+
+  const periodOptions = useMemo(
+    () => allPeriods.map((p) => ({ value: p.period, label: formatPeriod(p.period) })),
+    [allPeriods]
+  );
 
   return (
     <>
@@ -58,12 +72,16 @@ export default function ClientHours() {
         title="Consumo de horas"
         description="Movimientos de tu bolsa de horas: asignaciones mensuales, consumo por ticket y ajustes."
         actions={
-          <div className="trn-row" style={{ alignItems: 'flex-end' }}>
-            <Field label="Periodo" htmlFor="period">
-              <Input id="period" type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ width: 165 }} />
-            </Field>
-            {period && <Button variant="ghost" onClick={() => setPeriod('')}>Ver todo</Button>}
-          </div>
+          <Field label="Periodo" htmlFor="period">
+            <Select
+              id="period"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              placeholder="Todos los periodos"
+              options={periodOptions}
+              style={{ width: 200 }}
+            />
+          </Field>
         }
       />
 

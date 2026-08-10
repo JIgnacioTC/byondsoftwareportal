@@ -172,6 +172,25 @@ router.post('/contact', contactLimiter, async (req, res) => {
       }
     }
 
+    // The phone number and free-form message have nowhere to live on `clients`
+    // (no such columns there) — persist them on contact_messages so the admin
+    // panel can actually read what the visitor wrote instead of silently
+    // dropping it, as the previous version of this route did.
+    if (phone || message) {
+      const { error: messageError } = await db
+        .from('contact_messages')
+        .insert({
+          company_name: companyName,
+          contact_name: contactName,
+          email,
+          phone: phone || null,
+          service: service || planSlug || null,
+          message: message || null,
+          client_id: newClient.id,
+        });
+      if (messageError) console.error('Error saving contact message:', messageError);
+    }
+
     res.status(201).json({
       message: 'Solicitud recibida. Nuestro equipo se pondra en contacto contigo pronto.',
       clientNumber: newClient.client_number,
