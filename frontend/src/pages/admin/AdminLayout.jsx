@@ -6,7 +6,7 @@ import { USER_ROLE, describe, initials } from '../../lib/domain';
 import { Badge } from '../../components/ui';
 import {
   IconBuilding, IconChart, IconLayout, IconLogout, IconMail, IconMenu, IconTicket,
-  IconTool, IconTrending, IconUsers, IconBox, IconX,
+  IconTool, IconTrending, IconUsers, IconBox, IconPackage, IconX,
 } from '../../components/Icons';
 
 const NAV = [
@@ -31,6 +31,7 @@ const NAV = [
     items: [
       { to: '/admin/contenido', label: 'Contenido', Icon: IconLayout },
       { to: '/admin/servicios', label: 'Servicios', Icon: IconTool },
+      { to: '/admin/productos', label: 'Productos', Icon: IconPackage },
       { to: '/admin/mensajes', label: 'Mensajes', Icon: IconMail },
     ],
   },

@@ -1,9 +1,12 @@
 import { spawn } from "node:child_process";
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const npmCli = process.env.npm_execpath;
+const command = npmCli ? process.execPath : npm;
+const args = npmCli ? [npmCli, "run", "dev"] : ["run", "dev"];
 const services = ["backend", "frontend"];
 const children = services.map((service) =>
-  spawn(npm, ["run", "dev"], {
+  spawn(command, args, {
     cwd: new URL(`../${service}/`, import.meta.url),
     stdio: "inherit",
   }),

@@ -69,8 +69,10 @@ export const api = {
   submitContact: (data) => request('/public/contact', { method: 'POST', body: JSON.stringify(data) }),
   getStats: () => request('/public/stats'),
   getServices: () => request('/public/services'),
+  getProducts: () => request('/public/products'),
   getContent: () => request('/public/content'),
   createCheckoutSession: (data) => request('/stripe/create-checkout-session', { method: 'POST', body: JSON.stringify(data) }),
+  createProductCheckout: (data) => request('/stripe/create-product-checkout', { method: 'POST', body: JSON.stringify(data) }),
 
   // Admin - Dashboard
   getAdminDashboard: () => request('/admin'),
@@ -122,6 +124,14 @@ export const api = {
   deleteAdminService: (slug) => request(`/admin/content/services/${slug}`, { method: 'DELETE' }),
   getAdminMessages: () => request('/admin/messages'),
   updateAdminMessageStatus: (id, status) => request(`/admin/messages/${id}`, { method: 'PUT', body: JSON.stringify({ status }) }),
+
+  // Admin - Products
+  getAdminProducts: () => request('/admin/products'),
+  createAdminProduct: (data) => request('/admin/products', { method: 'POST', body: JSON.stringify(data) }),
+  updateAdminProduct: (id, data) => request(`/admin/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteAdminProduct: (id) => request(`/admin/products/${id}`, { method: 'DELETE' }),
+  // `imageBase64` is a data: URL (e.g. from FileReader.readAsDataURL); returns { url, path }.
+  uploadAdminProductImage: (imageBase64) => request('/admin/products/upload-image', { method: 'POST', body: JSON.stringify({ imageBase64 }) }),
 
   // Stripe
   createPortalSession: (clientId) => request('/stripe/portal-session', { method: 'POST', body: JSON.stringify({ clientId }) }),

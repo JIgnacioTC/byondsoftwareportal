@@ -59,8 +59,9 @@ export default function ClientPlan() {
 
   // The API returns `null` (not an error) when the client has no subscription.
   const plan = subscription?.plans || null;
+  const product = subscription?.products || null;
 
-  if (!subscription || !plan) {
+  if (!subscription || (!plan && !product)) {
     return (
       <>
         <PageHeader title="Mi plan" />
@@ -76,10 +77,19 @@ export default function ClientPlan() {
     );
   }
 
+  // Normalize a product into the same display shape as a plan
+  const effective = plan || {
+    name: product.name,
+    base_price: product.monthly_price,
+    billing_type: 'monthly',
+    features: product.features,
+    dev_hours_monthly: 0,
+  };
+
   const status = describe(SUBSCRIPTION_STATUS, subscription.status);
-  const billing = describe(BILLING_TYPE, plan.billing_type);
-  const features = parseFeatures(plan.features);
-  const hours = Number(plan.dev_hours_monthly) || 0;
+  const billing = describe(BILLING_TYPE, effective.billing_type);
+  const features = parseFeatures(effective.features);
+  const hours = Number(effective.dev_hours_monthly) || 0;
 
   return (
     <>
@@ -106,18 +116,18 @@ export default function ClientPlan() {
           <Card>
             <div className="trn-row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <p className="trn-eyebrow">{billing.label}</p>
-                <h2 style={{ fontSize: 22, fontWeight: 620, letterSpacing: '-0.02em', margin: 0 }}>{plan.name}</h2>
+                <p className="trn-eyebrow">{billing.label}{product && !plan ? ' · Producto' : ''}</p>
+                <h2 style={{ fontSize: 22, fontWeight: 620, letterSpacing: '-0.02em', margin: 0 }}>{effective.name}</h2>
                 <p className="trn-muted" style={{ fontSize: 13.5, marginTop: 4 }}>
-                  {hours > 0 ? `${hours} horas de desarrollo al mes` : 'Sin bolsa de horas incluida'}
+                  {hours > 0 ? `${hours} horas de desarrollo al mes` : (product && !plan ? 'Renta de producto — sin horas de desarrollo incluidas' : 'Sin bolsa de horas incluida')}
                 </p>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div className="trn-num" style={{ fontSize: 26, fontWeight: 620, letterSpacing: '-0.03em' }}>
-                  {formatMoney(plan.base_price)}
+                  {formatMoney(effective.base_price)}
                 </div>
                 <div className="trn-muted" style={{ fontSize: 12.5 }}>
-                  MXN {plan.billing_type === 'monthly' ? '/ mes' : ''}
+                  MXN {effective.billing_type === 'monthly' ? '/ mes' : ''}
                 </div>
               </div>
             </div>

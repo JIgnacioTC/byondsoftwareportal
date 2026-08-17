@@ -31,6 +31,30 @@ router.get('/plans', async (req, res) => {
   }
 });
 
+// GET /api/public/products
+router.get('/products', async (req, res) => {
+  try {
+    const db = createAdminClient();
+    const { data, error } = await db
+      .from('products')
+      .select('id, slug, name, tagline, description, icon, image_url, monthly_price, features, demo_url, stripe_product_id, stripe_price_id')
+      .eq('active', true)
+      .order('sort_order', { ascending: true });
+
+    if (error) throw error;
+
+    const products = (data || []).map(p => ({
+      ...p,
+      features: typeof p.features === 'string' ? JSON.parse(p.features) : p.features || [],
+    }));
+
+    res.json(products);
+  } catch (err) {
+    console.error('Error fetching products:', err);
+    res.status(500).json({ error: err.message || 'Error al obtener productos' });
+  }
+});
+
 // GET /api/public/stats
 router.get('/stats', async (req, res) => {
   try {

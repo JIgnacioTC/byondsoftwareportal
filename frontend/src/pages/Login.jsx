@@ -7,6 +7,7 @@ export default function Login() {
   const [searchParams] = useSearchParams();
   const initialMode = searchParams.get('mode') === 'signup' ? 'signup' : 'login';
   const planParam = searchParams.get('plan');
+  const redirectParam = searchParams.get('redirect');
 
   const [mode, setMode] = useState(initialMode); // 'login' | 'signup'
   const [email, setEmail] = useState('');
@@ -22,7 +23,9 @@ export default function Login() {
   const navigate = useNavigate();
 
   function goToDestination(currentUser) {
-    if (planParam) {
+    if (redirectParam && redirectParam.startsWith('/')) {
+      navigate(redirectParam);
+    } else if (planParam) {
       navigate(`/?plan=${planParam}#planes`);
     } else if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'agent')) {
       navigate('/admin');
@@ -111,7 +114,7 @@ export default function Login() {
             fontFamily: "'Space Grotesk', sans-serif",
             letterSpacing: '0.04em',
           }}>
-            {planParam ? 'Inicia sesión o regístrate para contratar tu plan' : 'Portal de Clientes y Soporte'}
+            {redirectParam ? 'Inicia sesión o regístrate para continuar con tu compra' : (planParam ? 'Inicia sesión o regístrate para contratar tu plan' : 'Portal de Clientes y Soporte')}
           </p>
         </div>
 

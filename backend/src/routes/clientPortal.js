@@ -325,7 +325,7 @@ router.get('/plan', async (req, res) => {
 
     const { data, error } = await db
       .from('subscriptions')
-      .select('*, plans(*)')
+      .select('*, plans(*), products(*)')
       .eq('client_id', clientId)
       .limit(1)
       .single();

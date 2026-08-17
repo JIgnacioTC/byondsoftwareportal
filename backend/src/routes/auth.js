@@ -238,7 +238,7 @@ router.get('/me', async (req, res) => {
 
       const { data: subs } = await supabaseAdmin
         .from('subscriptions')
-        .select('*, plans(*)')
+        .select('*, plans(*), products(*)')
         .eq('client_id', req.user.client_id)
         .limit(1);
       subscriptionInfo = subs?.[0] || null;

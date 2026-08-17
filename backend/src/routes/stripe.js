@@ -119,6 +119,106 @@ router.post('/create-checkout-session', async (req, res) => {
   }
 });
 
+// POST /api/stripe/create-product-checkout
+router.post('/create-product-checkout', async (req, res) => {
+  try {
+    const { productSlug, email, companyName, contactName } = req.body;
+
+    if (!productSlug || !email) {
+      return res.status(400).json({ error: 'productSlug y email son requeridos' });
+    }
+
+    const stripe = getStripe();
+    const db = createAdminClient();
+
+    // Get product from DB
+    const { data: product, error: productError } = await db
+      .from('products')
+      .select('*')
+      .eq('slug', productSlug)
+      .eq('active', true)
+      .single();
+
+    if (productError || !product) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    // Get or create Stripe customer
+    let customerId = null;
+
+    const existingCustomers = await stripe.customers.list({ email, limit: 1 });
+    if (existingCustomers.data.length > 0) {
+      customerId = existingCustomers.data[0].id;
+    } else {
+      const customer = await stripe.customers.create({
+        email,
+        name: companyName || contactName || email,
+        metadata: {
+          productSlug,
+          companyName: companyName || '',
+          contactName: contactName || '',
+        },
+      });
+      customerId = customer.id;
+    }
+
+    // Create or get Stripe price for this product
+    let priceId = product.stripe_price_id;
+
+    if (!priceId) {
+      const stripeProduct = await stripe.products.create({
+        name: `TORREN - ${product.name}`,
+        description: product.tagline || product.name,
+        metadata: { productSlug: product.slug },
+      });
+
+      const price = await stripe.prices.create({
+        product: stripeProduct.id,
+        unit_amount: Math.round(parseFloat(product.monthly_price) * 100),
+        currency: 'mxn',
+        recurring: { interval: 'month' },
+        metadata: { productSlug: product.slug },
+      });
+
+      priceId = price.id;
+
+      await db
+        .from('products')
+        .update({ stripe_price_id: priceId, stripe_product_id: stripeProduct.id })
+        .eq('id', product.id);
+    }
+
+    // Create Checkout Session
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      payment_method_types: ['card'],
+      mode: 'subscription',
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/stripe/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/stripe/cancel`,
+      metadata: {
+        productSlug: product.slug,
+        productId: String(product.id),
+        email,
+        companyName: companyName || '',
+        contactName: contactName || '',
+      },
+      subscription_data: {
+        metadata: {
+          productSlug: product.slug,
+          productId: String(product.id),
+          email,
+        },
+      },
+    });
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('Error creating product checkout session:', err);
+    res.status(500).json({ error: err.message || 'Error al crear sesion de pago', details: err.stack });
+  }
+});
+
 // POST /api/stripe/webhook
 router.post('/webhook', async (req, res) => {
   try {

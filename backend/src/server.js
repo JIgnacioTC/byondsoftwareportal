@@ -14,6 +14,7 @@ import adminTicketsRoutes from './routes/adminTickets.js';
 import adminDashboardRoutes from './routes/adminDashboard.js';
 import adminContentRoutes from './routes/adminContent.js';
 import adminMessagesRoutes from './routes/adminMessages.js';
+import adminProductsRoutes from './routes/adminProducts.js';
 import clientPortalRoutes from './routes/clientPortal.js';
 import stripeRoutes from './routes/stripe.js';
 
@@ -28,7 +29,10 @@ app.use(cors({
 
 // Stripe webhook needs raw body
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
-app.use(express.json());
+// Raised from the default 100kb so product image uploads (sent as base64
+// JSON, which inflates the payload ~33% over the raw file) fit within
+// adminProducts' own 5MB decoded-size check.
+app.use(express.json({ limit: '8mb' }));
 
 // Load user on every request
 app.use(loadUser);
@@ -54,6 +58,7 @@ app.use('/api/admin/plans', adminPlansRoutes);
 app.use('/api/admin/tickets', adminTicketsRoutes);
 app.use('/api/admin/content', adminContentRoutes);
 app.use('/api/admin/messages', adminMessagesRoutes);
+app.use('/api/admin/products', adminProductsRoutes);
 app.use('/api/admin', adminDashboardRoutes);
 
 // Client portal routes

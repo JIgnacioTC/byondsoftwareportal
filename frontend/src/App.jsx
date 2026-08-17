@@ -14,6 +14,7 @@ import ConfirmEmail from './pages/auth/ConfirmEmail';
 // Static pages
 import SobreNosotros from './pages/SobreNosotros';
 import Servicios from './pages/Servicios';
+import Productos from './pages/Productos';
 import Contacto from './pages/Contacto';
 import Privacidad from './pages/Privacidad';
 import Terminos from './pages/Terminos';
@@ -39,6 +40,7 @@ import AdminReports from './pages/admin/Reports';
 import Contenido from './pages/admin/Contenido';
 import Mensajes from './pages/admin/Mensajes';
 import ServiciosAdmin from './pages/admin/ServiciosAdmin';
+import ProductosAdmin from './pages/admin/ProductosAdmin';
 import StripeSuccess from './pages/stripe/Success';
 import StripeCancel from './pages/stripe/Cancel';
 
@@ -105,6 +107,7 @@ export default function App() {
           <Route path="/auth/confirm" element={<ConfirmEmail />} />
           <Route path="/sobre-nosotros" element={<SobreNosotros />} />
           <Route path="/servicios" element={<Servicios />} />
+          <Route path="/productos" element={<Productos />} />
           <Route path="/contacto" element={<Contacto />} />
           <Route path="/privacidad" element={<Privacidad />} />
           <Route path="/terminos" element={<Terminos />} />
@@ -147,6 +150,7 @@ export default function App() {
             <Route path="contenido" element={<Contenido />} />
             <Route path="mensajes" element={<Mensajes />} />
             <Route path="servicios" element={<ServiciosAdmin />} />
+            <Route path="productos" element={<ProductosAdmin />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

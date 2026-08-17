@@ -77,10 +77,9 @@ export async function allocateRenewalHours(invoice) {
     return null;
   }
 
-  const plan = subRecord.plans;
   const client = subRecord.clients;
-  if (!plan || !client) {
-    console.warn(`Subscription ${subscriptionId} is missing linked plan/client; cannot allocate renewal hours`);
+  if (!client) {
+    console.warn(`Subscription ${subscriptionId} is missing linked client; cannot allocate renewal hours`);
     return null;
   }
 
@@ -92,13 +91,6 @@ export async function allocateRenewalHours(invoice) {
   const periodDate = periodStartSec ? new Date(periodStartSec * 1000) : new Date();
   const period = `${periodDate.getFullYear()}-${String(periodDate.getMonth() + 1).padStart(2, '0')}`;
 
-  const result = await allocateHoursForPeriod(db, {
-    clientId: client.id,
-    planName: plan.name,
-    hours: plan.dev_hours_monthly || 0,
-    period,
-  });
-
   // Keep the subscription's billing period window in sync with Stripe.
   await db
     .from('subscriptions')
@@ -109,16 +101,35 @@ export async function allocateRenewalHours(invoice) {
     })
     .eq('id', subRecord.id);
 
+  // Product subscriptions skip hour allocation
+  if (!subRecord.plan_id) {
+    console.log(`Subscription ${subscriptionId} is a product rental; skipping hour allocation for renewal`);
+    return { allocated: false, clientId: client.id, isProduct: true };
+  }
+
+  const plan = subRecord.plans;
+  if (!plan) {
+    console.warn(`Subscription ${subscriptionId} is missing linked plan; cannot allocate renewal hours`);
+    return null;
+  }
+
+  const result = await allocateHoursForPeriod(db, {
+    clientId: client.id,
+    planName: plan.name,
+    hours: plan.dev_hours_monthly || 0,
+    period,
+  });
+
   return { ...result, clientId: client.id, planName: plan.name };
 }
 
 /**
  * Fulfill checkout session idempotently:
- * 1. Resolves customer, plan and subscription details.
+ * 1. Resolves customer, plan/product and subscription details.
  * 2. Creates or activates Client in DB.
  * 3. Creates or links User in Supabase Auth & Users table.
  * 4. Creates or updates Subscription in DB.
- * 5. Allocates Plan Development Hours in hour_ledger for current billing period.
+ * 5. Allocates Plan Development Hours in hour_ledger for current billing period (plan only).
  */
 export async function fulfillCheckoutSession(sessionIdOrSession) {
   const stripe = getStripe();
@@ -151,8 +162,11 @@ export async function fulfillCheckoutSession(sessionIdOrSession) {
   const customerEmail = session.customer_details?.email || (typeof session.customer === 'object' ? session.customer?.email : null) || metadata.email;
   const companyName = metadata.companyName || session.customer_details?.name || (typeof session.customer === 'object' ? session.customer?.name : null) || 'Empresa';
   const contactName = metadata.contactName || session.customer_details?.name || companyName;
-  const planSlug = metadata.planSlug || 'starter';
-  const rawPlanId = metadata.planId;
+  const planSlug = metadata.planSlug || null;
+  const rawPlanId = metadata.planId || null;
+  const productSlug = metadata.productSlug || null;
+  const rawProductId = metadata.productId || null;
+  const isProductCheckout = !!(productSlug || rawProductId);
 
   if (!customerEmail) {
     throw new Error('No se pudo identificar el correo del cliente en la sesión de Stripe');
@@ -162,22 +176,38 @@ export async function fulfillCheckoutSession(sessionIdOrSession) {
   const stripeSubObject = typeof session.subscription === 'object' ? session.subscription : null;
   const stripeSubId = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
 
-  // 1. Get Plan from DB
+  // 1. Get Plan or Product from DB
   let plan = null;
-  if (rawPlanId) {
-    const { data: p } = await db.from('plans').select('*').eq('id', parseInt(rawPlanId)).single();
-    plan = p;
-  }
-  if (!plan && planSlug) {
-    const { data: p } = await db.from('plans').select('*').eq('slug', planSlug).single();
-    plan = p;
-  }
-  if (!plan) {
-    const { data: p } = await db.from('plans').select('*').eq('active', true).order('id', { ascending: true }).limit(1).single();
-    plan = p;
-  }
-  if (!plan) {
-    throw new Error('No se encontró ningún plan activo en el sistema');
+  let product = null;
+
+  if (isProductCheckout) {
+    if (rawProductId) {
+      const { data: p } = await db.from('products').select('*').eq('id', parseInt(rawProductId)).single();
+      product = p;
+    }
+    if (!product && productSlug) {
+      const { data: p } = await db.from('products').select('*').eq('slug', productSlug).single();
+      product = p;
+    }
+    if (!product) {
+      throw new Error('No se encontró el producto solicitado');
+    }
+  } else {
+    if (rawPlanId) {
+      const { data: p } = await db.from('plans').select('*').eq('id', parseInt(rawPlanId)).single();
+      plan = p;
+    }
+    if (!plan && planSlug) {
+      const { data: p } = await db.from('plans').select('*').eq('slug', planSlug).single();
+      plan = p;
+    }
+    if (!plan) {
+      const { data: p } = await db.from('plans').select('*').eq('active', true).order('id', { ascending: true }).limit(1).single();
+      plan = p;
+    }
+    if (!plan) {
+      throw new Error('No se encontró ningún plan activo en el sistema');
+    }
   }
 
   // 2. Identify or Create Client
@@ -387,16 +417,24 @@ export async function fulfillCheckoutSession(sessionIdOrSession) {
     .eq('client_id', client.id)
     .limit(1);
 
+  const subUpdate = {
+    status: 'activa',
+    stripe_subscription_id: stripeSubId || (existingSubs?.[0]?.stripe_subscription_id) || null,
+    current_period_start: currentPeriodStart,
+    current_period_end: currentPeriodEnd,
+  };
+
+  if (isProductCheckout) {
+    subUpdate.product_id = product.id;
+    subUpdate.plan_id = null;
+  } else {
+    subUpdate.plan_id = plan.id;
+  }
+
   if (existingSubs && existingSubs.length > 0) {
     const { data: updatedSub, error: subUpdateErr } = await db
       .from('subscriptions')
-      .update({
-        plan_id: plan.id,
-        status: 'activa',
-        stripe_subscription_id: stripeSubId || existingSubs[0].stripe_subscription_id,
-        current_period_start: currentPeriodStart,
-        current_period_end: currentPeriodEnd,
-      })
+      .update(subUpdate)
       .eq('id', existingSubs[0].id)
       .select()
       .single();
@@ -404,17 +442,24 @@ export async function fulfillCheckoutSession(sessionIdOrSession) {
     if (subUpdateErr) console.error('Error updating subscription:', subUpdateErr);
     subRecord = updatedSub || existingSubs[0];
   } else {
+    const subInsert = {
+      client_id: client.id,
+      status: 'activa',
+      stripe_subscription_id: stripeSubId,
+      start_date: new Date().toISOString(),
+      current_period_start: currentPeriodStart,
+      current_period_end: currentPeriodEnd,
+    };
+
+    if (isProductCheckout) {
+      subInsert.product_id = product.id;
+    } else {
+      subInsert.plan_id = plan.id;
+    }
+
     const { data: newSub, error: subInsertErr } = await db
       .from('subscriptions')
-      .insert({
-        client_id: client.id,
-        plan_id: plan.id,
-        status: 'activa',
-        stripe_subscription_id: stripeSubId,
-        start_date: new Date().toISOString(),
-        current_period_start: currentPeriodStart,
-        current_period_end: currentPeriodEnd,
-      })
+      .insert(subInsert)
       .select()
       .single();
 
@@ -422,20 +467,23 @@ export async function fulfillCheckoutSession(sessionIdOrSession) {
     subRecord = newSub;
   }
 
-  // 5. Allocate Monthly Development Hours in hour_ledger for the current period.
-  // Renewal periods (month 2+) are allocated separately by allocateRenewalHours()
-  // when Stripe fires `invoice.paid` for the subscription's billing cycle.
-  const now = new Date();
-  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  // 5. Allocate Monthly Development Hours in hour_ledger for the current period (plans only).
+  // Product subscriptions skip hour allocation.
+  let hoursAllocated = 0;
+  if (!isProductCheckout) {
+    const now = new Date();
+    const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  const { hours: hoursAllocated } = await allocateHoursForPeriod(db, {
-    clientId: client.id,
-    planName: plan.name,
-    hours: plan.dev_hours_monthly || 0,
-    period: currentPeriod,
-  });
+    const result = await allocateHoursForPeriod(db, {
+      clientId: client.id,
+      planName: plan.name,
+      hours: plan.dev_hours_monthly || 0,
+      period: currentPeriod,
+    });
+    hoursAllocated = result.hours;
+  }
 
-  return {
+  const response = {
     success: true,
     status: session.payment_status,
     client: {
@@ -452,20 +500,32 @@ export async function fulfillCheckoutSession(sessionIdOrSession) {
       role: userRecord.role,
       isNewUser,
     },
-    plan: {
-      id: plan.id,
-      name: plan.name,
-      slug: plan.slug,
-      monthlyHours: plan.dev_hours_monthly,
-      priceMonthly: plan.price_monthly,
-    },
     subscription: {
       id: subRecord.id,
       status: subRecord.status,
       currentPeriodStart,
       currentPeriodEnd,
     },
-    hoursAllocated,
     setupLink,
   };
+
+  if (isProductCheckout) {
+    response.product = {
+      id: product.id,
+      name: product.name,
+      slug: product.slug,
+      monthlyPrice: product.monthly_price,
+    };
+  } else {
+    response.plan = {
+      id: plan.id,
+      name: plan.name,
+      slug: plan.slug,
+      monthlyHours: plan.dev_hours_monthly,
+      priceMonthly: plan.price_monthly,
+    };
+    response.hoursAllocated = hoursAllocated;
+  }
+
+  return response;
 }
